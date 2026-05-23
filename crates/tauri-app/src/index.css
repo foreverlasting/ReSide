@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  margin: 0;
+  font-family: "Geist", system-ui, sans-serif;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Subtle scrollbars inside artboards */
+.reside-scope ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.reside-scope ::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
+.reside-scope ::-webkit-scrollbar-track {
+  background: transparent;
+}

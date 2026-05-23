@@ -1,0 +1,54 @@
+[package]
+name = "reside-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core orchestration for ReSide: signing, device transport, install, and refresh."
+
+[lib]
+name = "reside_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+sqlx.workspace = true
+keyring.workspace = true
+fs2.workspace = true
+dirs.workspace = true
+sha2.workspace = true
+hex.workspace = true
+idevice = { workspace = true, features = [
+    "usbmuxd",
+    "pair",
+    "amfi",
+    "core_device_proxy",
+    "tunnel_tcp_stack",
+    "rsd",
+] }
+plist.workspace = true
+mdns-sd.workspace = true
+apple-codesign.workspace = true
+zip.workspace = true
+x509-certificate.workspace = true
+# Scratch workspace for the IPA signing pipeline (extract -> patch -> sign).
+tempfile = "3"
+# Free-Apple-ID credential flow (Phase 2). Pinned git revs — see workspace
+# Cargo.toml + plan.md §Known Foot-Guns. omnisette = local anisette via Apple's
+# ADI .so libs (FFI); icloud_auth = GSA login + 2FA; apple-dev-apis = CSR/cert/
+# device/App-ID/profile.
+omnisette.workspace = true
+icloud_auth.workspace = true
+apple-dev-apis.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Test-only: self-signed cert validity duration in signing::test_support.
+chrono = "0.4"
+# Test-only: build a minimal signable Mach-O target for the synthetic IPA fixture.
+semver = "1"

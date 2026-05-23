@@ -1,0 +1,18 @@
+# Rust
+/target
+**/target
+
+# Node
+node_modules
+crates/tauri-app/dist
+crates/tauri-app/.vite
+
+# Tauri generated
+crates/tauri-app/src-tauri/gen
+
+# Local env / secrets — never commit
+.env
+*.secret
+
+# OS
+.DS_Store

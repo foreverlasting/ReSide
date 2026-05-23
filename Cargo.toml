@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/tauri-app/src-tauri",
+]
+
+[workspace.package]
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/everlasting-marshall/reside"
+rust-version = "1.81"
+
+# Shared dependency versions. Pins are deliberate — see plan.md §Known Foot-Guns.
+# Phase 1/2 crates (idevice, apple-codesign, apple-private-apis, mdns-sd, zip,
+# plist, libloading) are intentionally NOT declared yet; they land with the
+# phases that use them.
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
+# Secret Service backend (gnome-keyring / KWallet) with a pure-Rust crypto
+# session — no system OpenSSL/libdbus needed. Without a backend feature keyring
+# v3 silently compiles an in-memory mock.
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+fs2 = "0.4"
+dirs = "5"
+sha2 = "0.10"
+hex = "0.4"
+# Pinned deliberately (plan.md §Known Foot-Guns). Pure-Rust RSD/RemoteXPC for
+# iOS 17.4+ over USB + Wi-Fi; replaces all libimobiledevice CLI shell-outs.
+# Default features keep the aws-lc crypto backend (used by lockdown TLS); the
+# `usbmuxd` feature is enabled per-crate where needed.
+idevice = { version = "0.1.61" }
+# Must match idevice's plist (1.8) so plist::Value types unify across the graph.
+plist = "1.8"
+# Pinned deliberately (plan.md §Known Foot-Guns). Pure-Rust mDNS service discovery
+# for Wi-Fi reachability (_remoted._tcp / _remotepairing._tcp on iOS 17.4+).
+mdns-sd = "0.11"
+# Pinned deliberately (plan.md §Known Foot-Guns). Pure-Rust Apple code signing
+# (indygreg/apple-platform-rs); signs Mach-O + .app bundles on Linux. Requires
+# Rust 1.81 (drove the workspace rust-version bump from 1.80). IPA zip wrapping
+# is ours — see signing/ipa_pipeline.rs.
+apple-codesign = "0.29"
+# IPA unzip/repack. Majors bump aggressively; 2.5+ are yanked, so pinned to 2.4.
+zip = "2.4"
+# Cert + signing-key types used across the apple-codesign signing API. Pinned to
+# match apple-codesign 0.29's x509-certificate dep so CapturedX509Certificate /
+# KeyInfoSigner types unify across the graph (cf. plist <-> idevice).
+x509-certificate = "0.24"
+# Apple auth + provisioning (the free-Apple-ID path). `apple-private-apis` is a
+# workspace, NOT a publishable crate — depend on the individual member crates by
+# pinned git rev (plan.md §Known Foot-Guns: never depend on the workspace root;
+# update all three pins together to the same SHA). Load-bearing-but-unmaintained
+# (master last pushed 2024-11-14); rev 03beb1a is master HEAD as of 2026-05-23,
+# verified to build on rustc 1.95. omnisette transitively pulls Dadoum's
+# `android-loader` to load Apple's ADI .so libs at runtime (NOT plain libloading).
+omnisette = { git = "https://github.com/SideStore/apple-private-apis", rev = "03beb1aa42991ccdad6214dee77e72282bef461f" }
+icloud_auth = { git = "https://github.com/SideStore/apple-private-apis", rev = "03beb1aa42991ccdad6214dee77e72282bef461f" }
+apple-dev-apis = { git = "https://github.com/SideStore/apple-private-apis", rev = "03beb1aa42991ccdad6214dee77e72282bef461f" }
+
+[profile.release]
+strip = true
+lto = "thin"

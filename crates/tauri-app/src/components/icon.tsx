@@ -1,0 +1,112 @@
+import {
+  Check,
+  X,
+  ChevronRight,
+  ChevronDown,
+  ChevronLeft,
+  ArrowRight,
+  Plus,
+  AlertTriangle,
+  Info,
+  Shield,
+  Wifi,
+  Usb,
+  Smartphone,
+  Package,
+  Download,
+  Upload,
+  RefreshCw,
+  Settings,
+  Activity,
+  Bell,
+  Clock,
+  Lock,
+  Unlock,
+  File,
+  Folder,
+  Terminal,
+  Search,
+  Eye,
+  EyeOff,
+  Pause,
+  Play,
+  Moon,
+  Sun,
+  MoreHorizontal,
+  GripVertical,
+  Zap,
+  ShieldCheck,
+  Copy,
+  ExternalLink,
+  Key,
+  User,
+  Trash2,
+  RotateCcw,
+  HelpCircle,
+  Power,
+  type LucideIcon,
+} from "lucide-react";
+
+// Maps the design's icon names to Lucide components so component call sites
+// (e.g. iconLeft="refresh") match the mocks verbatim.
+const ICONS = {
+  check: Check,
+  x: X,
+  chevronRight: ChevronRight,
+  chevronDown: ChevronDown,
+  chevronLeft: ChevronLeft,
+  arrowRight: ArrowRight,
+  plus: Plus,
+  alert: AlertTriangle,
+  info: Info,
+  shield: Shield,
+  wifi: Wifi,
+  usb: Usb,
+  smartphone: Smartphone,
+  package: Package,
+  download: Download,
+  upload: Upload,
+  refresh: RefreshCw,
+  settings: Settings,
+  activity: Activity,
+  bell: Bell,
+  clock: Clock,
+  lock: Lock,
+  unlock: Unlock,
+  file: File,
+  folder: Folder,
+  terminal: Terminal,
+  search: Search,
+  eye: Eye,
+  eyeOff: EyeOff,
+  pause: Pause,
+  play: Play,
+  moon: Moon,
+  sun: Sun,
+  more: MoreHorizontal,
+  grip: GripVertical,
+  zap: Zap,
+  shieldCheck: ShieldCheck,
+  copy: Copy,
+  externalLink: ExternalLink,
+  key: Key,
+  user: User,
+  trash: Trash2,
+  rotate: RotateCcw,
+  helpCircle: HelpCircle,
+  power: Power,
+} satisfies Record<string, LucideIcon>;
+
+export type IconName = keyof typeof ICONS;
+
+interface IconProps {
+  name: IconName;
+  size?: number;
+  className?: string;
+  strokeWidth?: number;
+}
+
+export const Icon = ({ name, size = 16, className = "", strokeWidth = 1.75 }: IconProps) => {
+  const C = ICONS[name];
+  return <C size={size} className={className} strokeWidth={strokeWidth} />;
+};

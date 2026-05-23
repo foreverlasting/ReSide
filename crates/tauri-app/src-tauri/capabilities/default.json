@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege permissions ReSide needs. Explicitly enumerated — no allowlist:** wildcard (see plan.md §Phase 0a / §Known Foot-Guns).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "notification:default",
+    "os:default",
+    "shell:default"
+  ]
+}

@@ -45,6 +45,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Dependency inventory in
-[LICENSES.md](LICENSES.md). Note: ReSide never ships Apple's ADI libraries; see
-LICENSES.md for details.
+GPL-3.0-or-later — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 ReSide contributors. This program is free software: you can
+redistribute it and/or modify it under the terms of the GNU General Public
+License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+Dependency inventory in [LICENSES.md](LICENSES.md). Note: ReSide never ships
+Apple's ADI libraries; see LICENSES.md for details.

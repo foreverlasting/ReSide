@@ -1,7 +1,9 @@
 # Dependency License Inventory
 
-ReSide is MIT-licensed. All bundled dependencies are permissively licensed and
-MIT-compatible. This file is kept current as dependencies are added.
+ReSide is licensed under **GPL-3.0-or-later**. Its dependencies are GPL-compatible
+(permissive licenses like MIT/Apache-2.0/MPL-2.0 combine fine with GPL-3.0, and
+copyleft components such as the Sideloader signer are themselves GPL-3.0). This
+file is kept current as dependencies are added.
 
 ## Rust crates (current as of Phase 0)
 

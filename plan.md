@@ -33,6 +33,13 @@ Linux-first desktop app for signing, sideloading, and auto-refreshing iOS apps o
 
 ## Signing Ecosystem
 
+> **⚠️ SUPERSEDED (2026-05-23).** This section describes the original plan to *own* the Apple
+> free-signing stack natively in Rust. ReSide has since **pivoted**: the upstream Rust crates
+> implement Apple login but not the developer-services (cert/profile) half, so ReSide now drives a
+> **fork of Dadoum Sideloader** as the signer and focuses on automation/Wi-Fi/refresh on top. See
+> `ONBOARDING.md` and the `project-motivation` memory. The native approach below is parked on the
+> `native-signing-path` git branch; read it as historical. (§Known Foot-Guns still applies.)
+
 Free Apple ID signing requires two distinct things:
 
 1. **Apple authentication + provisioning** — authenticating with Apple's GSA (Grand Slam Auth), generating anisette data, registering devices, creating certificates and provisioning profiles. The fragile, potentially-breaking piece.

@@ -3,6 +3,7 @@
 
 pub mod redaction;
 
+use reside_core::ipa_store::IpaStore;
 use reside_core::operation::OperationChannel;
 use reside_core::paths::Paths;
 use reside_core::secure_storage::SecureStore;
@@ -20,6 +21,7 @@ pub struct AppState {
     store: SecureStore,
     ops: OperationChannel,
     tunnels: TunnelManager,
+    ipa_store: IpaStore,
 }
 
 /// UI-safe error returned across the IPC boundary: category key + remediation,
@@ -148,6 +150,211 @@ async fn get_activity_log(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Ac
     Ok(rows)
 }
 
+// ---------------------------------------------------------------------------
+// Apple account + sign/install (task 11b). ReSide stores the user's Apple ID
+// credentials locally and drives the forked Sideloader signer to sign + install
+// an IPA over USB; the result is recorded in SQLite for the Dashboard and the
+// (upcoming) refresh agent.
+// ---------------------------------------------------------------------------
+
+/// Open a native file picker for an `.ipa`. Returns the chosen path, or `None`
+/// if the user cancelled. Run on the Rust side so the real filesystem path
+/// stays available to the signer (a browser `<input type=file>` would not
+/// expose it).
+#[tauri::command]
+async fn pick_ipa(app: tauri::AppHandle) -> CmdResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("iOS app", &["ipa"])
+        .pick_file(move |picked| {
+            let _ = tx.send(picked.map(|p| p.to_string()));
+        });
+    rx.await
+        .map_err(|_| AppError::Internal("file dialog closed unexpectedly".into()).into())
+}
+
+/// Whether an Apple ID is stored (i.e. the user has "signed in" to ReSide).
+#[tauri::command]
+async fn is_signed_in(state: tauri::State<'_, AppState>) -> CmdResult<bool> {
+    Ok(reside_core::signer::load_credentials(&state.store)?.is_some())
+}
+
+/// Store (or replace) the Apple ID credentials in the secret store. The actual
+/// authentication happens during install, so this just persists them.
+#[tauri::command]
+async fn set_apple_credentials(
+    state: tauri::State<'_, AppState>,
+    apple_id: String,
+    password: String,
+) -> CmdResult<()> {
+    let creds = reside_core::signer::AppleCredentials {
+        apple_id,
+        password: reside_core::Secret::new(password),
+    };
+    reside_core::signer::store_credentials(&state.store, &creds)?;
+    Ok(())
+}
+
+/// Forget the stored Apple ID credentials.
+#[tauri::command]
+async fn sign_out(state: tauri::State<'_, AppState>) -> CmdResult<()> {
+    reside_core::signer::clear_credentials(&state.store)?;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallOutcome {
+    installation_id: i64,
+    display_name: String,
+    bundle_id: String,
+    expiration_ts: i64,
+}
+
+/// Sign and install `path` onto `udid` via the forked signer, then record it.
+///
+/// Progress is emitted on `operation_{operation_id}`; the frontend subscribes
+/// before invoking so it can show stages. If Apple wants a 2FA code this returns
+/// the `AppleAuth2FARequired` category — re-invoke with `two_fa_code` set.
+#[tauri::command]
+async fn install_ipa(
+    state: tauri::State<'_, AppState>,
+    operation_id: String,
+    path: String,
+    udid: String,
+    two_fa_code: Option<String>,
+) -> CmdResult<InstallOutcome> {
+    use reside_core::operation::OperationStage;
+    use reside_core::signer::{self, InstallRequest};
+
+    let op = state.ops.start(operation_id);
+
+    let run = async {
+        let Some(creds) = signer::load_credentials(&state.store)? else {
+            return Err(AppError::AppleAuthCredentialsInvalid);
+        };
+
+        op.stage(OperationStage::Preparing, 0.1, Some("Reading app…".into()));
+        let stored = state.ipa_store.store_file(&path)?;
+        let meta = reside_core::ipa_meta::read_ipa_metadata(&stored.path)?;
+
+        op.stage(
+            OperationStage::Signing,
+            0.3,
+            Some(format!("Signing {}…", meta.display_name)),
+        );
+        let req = InstallRequest {
+            creds: &creds,
+            ipa_path: &stored.path,
+            udid: &udid,
+            two_fa_code: two_fa_code.as_deref(),
+        };
+        signer::install(&req).await?;
+
+        op.stage(
+            OperationStage::Installing,
+            0.85,
+            Some("Recording install…".into()),
+        );
+        let device = device_row_for(&udid).await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let recorded = reside_core::installs::record_install(
+            &state.db,
+            &reside_core::installs::InstallRecord {
+                device: &device,
+                meta: &meta,
+                stored_ipa: &stored,
+                apple_id: &creds.apple_id,
+                team_id: None,
+                installed_at: now,
+            },
+        )
+        .await?;
+
+        Ok::<_, AppError>(InstallOutcome {
+            installation_id: recorded.installation_id,
+            display_name: meta.display_name,
+            bundle_id: meta.bundle_id,
+            expiration_ts: recorded.expiration_ts,
+        })
+    };
+
+    match run.await {
+        Ok(outcome) => {
+            op.done();
+            Ok(outcome)
+        }
+        Err(e @ AppError::AppleAuth2faRequired) => {
+            // Not a hard failure — the UI will prompt for the code and retry.
+            op.stage(
+                OperationStage::Awaiting2fa,
+                0.5,
+                Some("Waiting for verification code…".into()),
+            );
+            Err(e.into())
+        }
+        Err(e) => {
+            op.fail(&e);
+            Err(e.into())
+        }
+    }
+}
+
+/// Best-effort device identity for the install record: read name/iOS from
+/// usbmuxd if the device is reachable, else fall back to just the UDID.
+async fn device_row_for(udid: &str) -> reside_core::installs::DeviceRow {
+    let found = reside_core::device::list_devices()
+        .await
+        .ok()
+        .and_then(|ds| ds.into_iter().find(|d| d.udid == udid));
+    match found {
+        Some(d) => reside_core::installs::DeviceRow {
+            udid: d.udid,
+            name: d.name,
+            ios_version: d.ios_version,
+        },
+        None => reside_core::installs::DeviceRow {
+            udid: udid.to_string(),
+            name: None,
+            ios_version: None,
+        },
+    }
+}
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledApp {
+    installation_id: i64,
+    display_name: String,
+    bundle_id: String,
+    version: Option<String>,
+    device_udid: String,
+    install_ts: i64,
+    expiration_ts: i64,
+    refresh_status: String,
+}
+
+/// List installed apps (joined with their app metadata), soonest-to-expire
+/// first — the Dashboard's live app grid.
+#[tauri::command]
+async fn list_apps(state: tauri::State<'_, AppState>) -> CmdResult<Vec<InstalledApp>> {
+    let rows = sqlx::query_as::<_, InstalledApp>(
+        "SELECT i.id AS installation_id, a.display_name, a.bundle_id, a.version, \
+                i.device_udid, i.install_ts, i.expiration_ts, i.refresh_status \
+         FROM installations i JOIN apps a ON a.id = i.app_id \
+         ORDER BY i.expiration_ts ASC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(AppError::from)?;
+    Ok(rows)
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -189,12 +396,14 @@ pub fn run() {
                 }
             });
 
+            let ipa_store = IpaStore::new(paths.ipa_store_dir());
             app.manage(AppState {
                 paths,
                 db,
                 store,
                 ops,
                 tunnels: TunnelManager::new(),
+                ipa_store,
             });
             tracing::info!("ReSide core initialized");
             Ok(())
@@ -207,7 +416,13 @@ pub fn run() {
             pair_device,
             developer_mode_status,
             check_wifi_availability,
-            get_activity_log
+            get_activity_log,
+            pick_ipa,
+            is_signed_in,
+            set_apple_credentials,
+            sign_out,
+            install_ipa,
+            list_apps
         ])
         .run(tauri::generate_context!())
         .expect("error while running ReSide");

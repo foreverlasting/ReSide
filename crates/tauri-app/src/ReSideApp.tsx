@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Setup } from "./screens/Setup";
 import { Dashboard } from "./screens/Dashboard";
+import { ImportModal } from "./screens/ImportModal";
 import {
   Pairing,
   type DevModeState,
@@ -14,7 +15,7 @@ import {
   type TunnelPhase,
   type WifiPhase,
 } from "./screens/Pairing";
-import { api, asCommandError, type DeviceInfo } from "./lib/ipc";
+import { api, asCommandError, isTauri, type DeviceInfo } from "./lib/ipc";
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
@@ -24,6 +25,7 @@ export function ReSideApp() {
   const [dark, setDark] = useState(false);
   const [screen, setScreen] = useState<Screen>("setup");
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const setup = useQuery({ queryKey: ["setup-check"], queryFn: api.runSetupCheck });
   const tunnel = useQuery({ queryKey: ["tunnel-status"], queryFn: api.getTunnelStatus });
@@ -33,6 +35,9 @@ export function ReSideApp() {
     queryFn: api.listDevices,
     refetchInterval: 2000,
   });
+
+  // Installed apps for the live Dashboard grid.
+  const apps = useQuery({ queryKey: ["apps"], queryFn: api.listApps, enabled: isTauri() });
 
   const deviceList = useMemo(() => devices.data ?? [], [devices.data]);
   // The device we'll pair: the explicitly-selected one, else the first seen.
@@ -176,17 +181,31 @@ export function ReSideApp() {
           }}
         />
       ) : (
-        <Dashboard
-          dark={dark}
-          live
-          device={target ?? null}
-          toolbarExtra={toolbarExtra}
-          onNavigate={(id) => {
-            // Only "Devices" routes anywhere yet — back to pairing. The rest are
-            // inert until their phases land.
-            if (id === "devices") setScreen("pairing");
-          }}
-        />
+        <>
+          <Dashboard
+            dark={dark}
+            live
+            device={target ?? null}
+            apps={apps.data ?? []}
+            toolbarExtra={toolbarExtra}
+            onImport={target ? () => setImporting(true) : undefined}
+            onNavigate={(id) => {
+              // Only "Devices" routes anywhere yet — back to pairing. The rest are
+              // inert until their phases land.
+              if (id === "devices") setScreen("pairing");
+            }}
+          />
+          {importing && (
+            <ImportModal
+              device={target ?? null}
+              onClose={() => setImporting(false)}
+              onInstalled={() => {
+                setImporting(false);
+                apps.refetch();
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

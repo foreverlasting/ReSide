@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { GnomeWindow, Sidebar } from "../components/chrome";
 import { Icon, Button, Badge, Card, CardContent, Kbd, AppTile, StatusDot, cn } from "../components/ui";
-import type { DeviceInfo } from "../lib/ipc";
+import type { DeviceInfo, InstalledApp } from "../lib/ipc";
 
 type AppStatus = "healthy" | "refreshSoon" | "refreshing" | "expired";
 
@@ -23,27 +23,32 @@ const SAMPLE_APPS: SampleApp[] = [
   { name: "Feather", bundle: "kh.crysalis.feather.maya", version: "1.2.0", color: "teal", expiresDays: -0.2, status: "expired" },
 ];
 
-// `live` opts into the real app (vs. the design Gallery): the apps area is empty
-// until signing/install land (Phase 2–3), the sidebar shows the real `device`,
-// and `toolbarExtra` (live status pills + theme toggle) replaces the mock search
-// + bell. `onNavigate` lets the sidebar route back to pairing.
+// `live` opts into the real app (vs. the design Gallery): apps come from the
+// backend (`apps`), the sidebar shows the real `device`, `onImport` opens the
+// sign+install flow, and `toolbarExtra` (live status pills + theme toggle)
+// replaces the mock search + bell. `onNavigate` lets the sidebar route back to
+// pairing.
 export function Dashboard({
   dark = false,
   empty = false,
   live = false,
   device,
+  apps = [],
   toolbarExtra,
   onNavigate,
+  onImport,
 }: {
   dark?: boolean;
   empty?: boolean;
   live?: boolean;
   device?: DeviceInfo | null;
+  apps?: InstalledApp[];
   toolbarExtra?: ReactNode;
   onNavigate?: (id: string) => void;
+  onImport?: () => void;
 }) {
-  // No install pipeline yet, so live mode always shows the empty state.
-  const noApps = empty || live;
+  // In live mode the apps area reflects the real install list.
+  const noApps = live ? apps.length === 0 : empty;
   const deviceLabel = device?.name ?? (device ? `${device.udid.slice(0, 8)}…` : null);
 
   const subtitle = live
@@ -93,7 +98,9 @@ export function Dashboard({
               <p className="mt-0.5 text-[13px] text-slate-500 dark:text-slate-400">
                 {live
                   ? deviceLabel
-                    ? `${deviceLabel} is paired and reachable. Signing & install arrive in the next update.`
+                    ? noApps
+                      ? `${deviceLabel} is paired and reachable. Import an IPA to sign and install it.`
+                      : `${apps.length} app${apps.length === 1 ? "" : "s"} on ${deviceLabel}.`
                     : "Pair a device to get started."
                   : empty
                     ? "Drop an .ipa to get started. We'll handle signing and re-signing every 6 days."
@@ -101,19 +108,30 @@ export function Dashboard({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {!noApps && (
+              {/* "Refresh all" arrives with auto-refresh (11c); hidden in live until then. */}
+              {!noApps && !live && (
                 <Button variant="outline" size="sm" iconLeft="refresh">
                   Refresh all
                 </Button>
               )}
-              {/* Import lands in Phase 2; disabled in live mode until then. */}
-              <Button size="sm" iconLeft="plus" disabled={live}>
+              <Button
+                size="sm"
+                iconLeft="plus"
+                disabled={live && !onImport}
+                onClick={live ? onImport : undefined}
+              >
                 Import IPA
               </Button>
             </div>
           </div>
 
-          {noApps ? <EmptyDashboard live={live} /> : <FilledDashboard />}
+          {noApps ? (
+            <EmptyDashboard live={live} onChoose={onImport} />
+          ) : live ? (
+            <LiveApps apps={apps} />
+          ) : (
+            <FilledDashboard />
+          )}
         </main>
       </div>
     </GnomeWindow>
@@ -166,7 +184,50 @@ function FilledDashboard() {
   );
 }
 
-function EmptyDashboard({ live = false }: { live?: boolean }) {
+// --- Live (backend-backed) apps ---------------------------------------------
+
+const CARD_COLORS = ["violet", "blue", "orange", "green", "pink", "teal"] as const;
+
+// Stable per-bundle tile color so an app keeps the same look across refreshes.
+function colorFor(seed: string): SampleApp["color"] {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return CARD_COLORS[Math.abs(h) % CARD_COLORS.length];
+}
+
+function toSampleApp(a: InstalledApp): SampleApp {
+  const expiresDays = (a.expirationTs * 1000 - Date.now()) / 86_400_000;
+  const status: AppStatus =
+    a.refreshStatus === "refreshing"
+      ? "refreshing"
+      : expiresDays < 0
+        ? "expired"
+        : expiresDays < 1.5
+          ? "refreshSoon"
+          : "healthy";
+  return {
+    name: a.displayName,
+    bundle: a.bundleId,
+    version: a.version ?? "—",
+    color: colorFor(a.bundleId),
+    expiresDays,
+    status,
+  };
+}
+
+function LiveApps({ apps }: { apps: InstalledApp[] }) {
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
+      <div className="grid grid-cols-2 gap-3">
+        {apps.map((a) => (
+          <AppCard key={a.installationId} app={toSampleApp(a)} live />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EmptyDashboard({ live = false, onChoose }: { live?: boolean; onChoose?: () => void }) {
   return (
     <div className="flex flex-1 items-center justify-center px-10 py-10">
       <div
@@ -188,7 +249,7 @@ function EmptyDashboard({ live = false }: { live?: boolean }) {
           </p>
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <Button iconLeft="upload" disabled={live}>
+          <Button iconLeft="upload" disabled={live && !onChoose} onClick={live ? onChoose : undefined}>
             Choose IPA…
           </Button>
           <Button variant="outline" disabled={live}>
@@ -217,7 +278,7 @@ function EmptyDashboard({ live = false }: { live?: boolean }) {
   );
 }
 
-function AppCard({ app }: { app: SampleApp }) {
+function AppCard({ app, live = false }: { app: SampleApp; live?: boolean }) {
   const { name, bundle, version, color, expiresDays, status } = app;
   const statusMap: Record<AppStatus, { tone: "success" | "warning" | "info" | "danger"; label: string; dot: "success" | "warning" | "info" | "danger"; pulse?: boolean }> = {
     healthy: { tone: "success", label: "Healthy", dot: "success" },
@@ -290,9 +351,12 @@ function AppCard({ app }: { app: SampleApp }) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          <button className="text-[11.5px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100">
-            Refresh now
-          </button>
+          {/* Manual refresh lands with auto-refresh (11c); inert button hidden in live. */}
+          {!live && (
+            <button className="text-[11.5px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100">
+              Refresh now
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>

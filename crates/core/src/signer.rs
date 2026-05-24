@@ -16,7 +16,7 @@
 
 use crate::error::{AppError, Result, Secret};
 use crate::secure_storage::SecureStore;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -89,10 +89,12 @@ pub fn sideloader_binary() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("sideloader"))
 }
 
-/// Raw result of a finished Sideloader invocation.
+/// Raw result of a finished Sideloader invocation. `output` is stdout and
+/// stderr concatenated: Sideloader logs through slf4d, which writes to stdout,
+/// so we must inspect both streams to classify a failure.
 struct RawOutcome {
     code: Option<i32>,
-    stderr: String,
+    output: String,
 }
 
 /// Classify a finished Sideloader run into the ReSide taxonomy.
@@ -101,17 +103,37 @@ struct RawOutcome {
 /// - exit 0 → `Ok(())`
 /// - the 2FA marker or [`EXIT_2FA`] → [`AppError::AppleAuth2faRequired`]
 /// - a login failure → [`AppError::AppleAuthCredentialsInvalid`]
+/// - no device attached → [`AppError::DeviceOffline`]
+/// - a free-account weekly limit → the matching quota error
 /// - anything else → [`AppError::Internal`]
 fn classify(outcome: &RawOutcome) -> Result<()> {
     if outcome.code == Some(0) {
         return Ok(());
     }
-    if outcome.code == Some(EXIT_2FA) || outcome.stderr.contains(TWO_FA_MARKER) {
+    if outcome.code == Some(EXIT_2FA) || outcome.output.contains(TWO_FA_MARKER) {
         return Err(AppError::AppleAuth2faRequired);
     }
-    let s = outcome.stderr.to_lowercase();
+    let s = outcome.output.to_lowercase();
     if s.contains("can't log-in") || s.contains("cant log-in") || s.contains("log-in") {
         return Err(AppError::AppleAuthCredentialsInvalid);
+    }
+    // `sideloader install` prints this when no (matching) device is attached.
+    if s.contains("no device connected") || s.contains("device connected") {
+        return Err(AppError::DeviceOffline);
+    }
+    // The delegated signer talks to the device through libimobiledevice, whose
+    // pairing is separate from ReSide's own. If that system pairing is missing
+    // or stale the device rejects it with INVALID_HOST_ID — the user needs to
+    // (re-)trust this computer (e.g. `idevicepair pair`).
+    if s.contains("invalid_host_id") || s.contains("not paired") {
+        return Err(AppError::DeviceNotTrusted);
+    }
+    // Free Apple-ID weekly quotas (10 App IDs / 10 device registrations).
+    if s.contains("maximum app id") || s.contains("maximum number of app id") {
+        return Err(AppError::AppleAppIdLimitReached);
+    }
+    if s.contains("maximum") && s.contains("device") {
+        return Err(AppError::AppleDevDeviceRegLimitReached);
     }
     Err(AppError::Internal(format!(
         "sideloader exited with {:?}",
@@ -163,9 +185,27 @@ async fn run(
         .await
         .map_err(|e| AppError::Internal(format!("signer did not complete: {e}")))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let code = output.status.code();
+
+    // On any non-zero exit, log the tool's own output so a failed sign/install
+    // is diagnosable from the terminal (it never reaches the redacted UI error).
+    // Sideloader does not echo the password; the Apple ID may appear, which is
+    // acceptable in a local diagnostic log.
+    if code != Some(0) {
+        tracing::warn!(
+            ?code,
+            args = ?args,
+            stdout = %stdout.trim(),
+            stderr = %stderr.trim(),
+            "sideloader exited non-zero"
+        );
+    }
+
     Ok(RawOutcome {
-        code: output.status.code(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        code,
+        output: format!("{stdout}\n{stderr}"),
     })
 }
 
@@ -177,6 +217,46 @@ async fn run(
 /// validated manually, and the smoke test that the bridge works end-to-end.
 pub async fn verify_login(creds: &AppleCredentials) -> Result<()> {
     let outcome = run(creds, &["team", "list"], &[]).await?;
+    classify(&outcome)
+}
+
+/// Inputs for one sign-and-install run. Borrowed so the caller keeps ownership
+/// of the credentials and paths.
+pub struct InstallRequest<'a> {
+    pub creds: &'a AppleCredentials,
+    /// Path to the (unsigned) `.ipa`. Sideloader signs it in place during install.
+    pub ipa_path: &'a Path,
+    /// Target device UDID. Required even with one device so the fork doesn't
+    /// have to guess.
+    pub udid: &'a str,
+    /// A 2FA code to satisfy a prior [`AppError::AppleAuth2faRequired`]. On the
+    /// first attempt this is `None`; the fork only asks when the device isn't
+    /// already trusted.
+    pub two_fa_code: Option<&'a str>,
+}
+
+/// Sign and install an IPA by delegating to the forked `sideloader install`,
+/// which renames the app, registers its identifier, signs it, and installs it
+/// over USB in one pass.
+///
+/// `--singlethread` is deliberate: the user's recurring "signing gets stuck"
+/// pain is the multithreaded signer being flaky, and Sideloader documents
+/// single-threaded mode as trading speed for consistency. We take the slower,
+/// reliable path here.
+///
+/// Returns [`AppError::AppleAuth2faRequired`] if Apple demanded a code and none
+/// was supplied — re-call with [`InstallRequest::two_fa_code`] set.
+pub async fn install(req: &InstallRequest<'_>) -> Result<()> {
+    let ipa = req.ipa_path.to_string_lossy();
+    let args = [
+        "install",
+        ipa.as_ref(),
+        "--udid",
+        req.udid,
+        "--singlethread",
+    ];
+    let extra: Vec<&str> = req.two_fa_code.into_iter().collect();
+    let outcome = run(req.creds, &args, &extra).await?;
     classify(&outcome)
 }
 
@@ -215,43 +295,63 @@ mod tests {
         assert_eq!(sideloader_binary(), PathBuf::from("sideloader"));
     }
 
+    /// Build an outcome whose recognizable text lands on *stdout* — where
+    /// Sideloader's slf4d logger actually writes it. This guards the regression
+    /// where classification only looked at stderr.
+    fn on_stdout(code: i32, stdout: &str) -> RawOutcome {
+        RawOutcome {
+            code: Some(code),
+            output: format!("{stdout}\n"), // run() puts stdout first, stderr after
+        }
+    }
+
     #[test]
     fn classify_maps_outcomes_to_taxonomy() {
         assert!(classify(&RawOutcome {
             code: Some(0),
-            stderr: String::new()
+            output: String::new()
         })
         .is_ok());
 
         assert!(matches!(
             classify(&RawOutcome {
                 code: Some(EXIT_2FA),
-                stderr: String::new()
+                output: String::new()
             }),
             Err(AppError::AppleAuth2faRequired)
         ));
 
+        // The 2FA marker / login error / device error all arrive on stdout.
         assert!(matches!(
-            classify(&RawOutcome {
-                code: Some(1),
-                stderr: "RESIDE_2FA_REQUIRED".into()
-            }),
+            classify(&on_stdout(2, "RESIDE_2FA_REQUIRED")),
             Err(AppError::AppleAuth2faRequired)
         ));
 
         assert!(matches!(
-            classify(&RawOutcome {
-                code: Some(1),
-                stderr: "ERROR Can't log-in! ...".into()
-            }),
+            classify(&on_stdout(1, "ERROR Can't log-in! ...")),
             Err(AppError::AppleAuthCredentialsInvalid)
         ));
 
         assert!(matches!(
-            classify(&RawOutcome {
-                code: Some(70),
-                stderr: "some other failure".into()
-            }),
+            classify(&on_stdout(1, "ERROR No device connected.")),
+            Err(AppError::DeviceOffline)
+        ));
+
+        assert!(matches!(
+            classify(&on_stdout(
+                1,
+                "iMobileDeviceException ... error LOCKDOWN_E_INVALID_HOST_ID"
+            )),
+            Err(AppError::DeviceNotTrusted)
+        ));
+
+        assert!(matches!(
+            classify(&on_stdout(1, "Maximum App IDs reached for this account")),
+            Err(AppError::AppleAppIdLimitReached)
+        ));
+
+        assert!(matches!(
+            classify(&on_stdout(1, "some other failure")),
             Err(AppError::Internal(_))
         ));
     }

@@ -10,6 +10,8 @@
 
 pub mod db;
 pub mod error;
+pub mod installs;
+pub mod ipa_meta;
 pub mod ipa_store;
 pub mod operation;
 pub mod paths;

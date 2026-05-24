@@ -94,6 +94,35 @@ export interface DeviceInfo {
   supported: boolean;
 }
 
+/** Returned by `install_ipa` on success. */
+export interface InstallOutcome {
+  installationId: number;
+  displayName: string;
+  bundleId: string;
+  expirationTs: number;
+}
+
+/** One installed app (installation row joined with its app metadata). */
+export interface InstalledApp {
+  installationId: number;
+  displayName: string;
+  bundleId: string;
+  version: string | null;
+  deviceUdid: string;
+  installTs: number;
+  expirationTs: number;
+  refreshStatus: string;
+}
+
+/** Arguments for the `install_ipa` command. `twoFaCode` is set only on a retry
+ *  after a `AppleAuth2FARequired` error. */
+export interface InstallArgs {
+  operationId: string;
+  path: string;
+  udid: string;
+  twoFaCode?: string;
+}
+
 export const api = {
   runSetupCheck: () => invoke<SetupReport>("run_setup_check"),
   getTunnelStatus: () => invoke<TunnelPill>("get_tunnel_status"),
@@ -103,4 +132,13 @@ export const api = {
   developerModeStatus: (udid: string) => invoke<boolean>("developer_mode_status", { udid }),
   checkWifiAvailability: () => invoke<WifiAvailability>("check_wifi_availability"),
   getActivityLog: () => invoke<ActivityRow[]>("get_activity_log"),
+  // Sign / install (task 11b).
+  pickIpa: () => invoke<string | null>("pick_ipa"),
+  isSignedIn: () => invoke<boolean>("is_signed_in"),
+  setAppleCredentials: (appleId: string, password: string) =>
+    invoke<void>("set_apple_credentials", { appleId, password }),
+  signOut: () => invoke<void>("sign_out"),
+  installIpa: ({ operationId, path, udid, twoFaCode }: InstallArgs) =>
+    invoke<InstallOutcome>("install_ipa", { operationId, path, udid, twoFaCode }),
+  listApps: () => invoke<InstalledApp[]>("list_apps"),
 };

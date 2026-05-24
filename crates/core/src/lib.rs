@@ -20,6 +20,7 @@ pub mod device;
 pub mod installer;
 pub mod refresh;
 pub mod setup;
+pub mod signer;
 pub mod signing;
 pub mod transport;
 

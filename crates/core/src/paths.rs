@@ -70,9 +70,6 @@ impl Paths {
     pub fn ipa_store_dir(&self) -> PathBuf {
         self.data.join("ipas")
     }
-    pub fn pair_records_dir(&self) -> PathBuf {
-        self.data.join("pair_records")
-    }
     pub fn profiles_dir(&self) -> PathBuf {
         self.data.join("profiles")
     }
@@ -103,7 +100,6 @@ impl Paths {
             &self.config,
             &self.state,
             &self.ipa_store_dir(),
-            &self.pair_records_dir(),
             &self.profiles_dir(),
             &self.adi_dir(),
             &self.logs_dir(),

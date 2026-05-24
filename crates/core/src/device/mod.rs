@@ -4,17 +4,13 @@
 //! best-effort, pairing-free read of basic lockdown values (name, version).
 //! Pairing, Developer Mode state, and RSD tunnels land in subsequent slices.
 
-pub mod pair_record;
-
 use crate::error::{AppError, Result};
-use crate::paths::Paths;
 use idevice::amfi::AmfiClient;
 use idevice::lockdown::LockdownClient;
 use idevice::pairing_file::PairingFile;
 use idevice::provider::{IdeviceProvider, UsbmuxdProvider};
 use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection, UsbmuxdDevice};
 use idevice::{Idevice, IdeviceError, IdeviceService};
-use pair_record::PairRecordStore;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::future::Future;
@@ -118,7 +114,14 @@ async fn get_string(client: &mut LockdownClient, key: &str) -> Option<String> {
 
 /// Pair with a device over USB: generate a pairing record, send it to the
 /// device (which surfaces the on-screen "Trust This Computer?" dialog), and
-/// persist the resulting record so future sessions are trusted.
+/// hand the resulting record to usbmuxd so the whole host trusts the device.
+///
+/// ReSide keeps **no private pairing store of its own**. It saves the record
+/// into usbmuxd via the same `SavePairRecord` that `idevicepair pair` performs,
+/// so usbmuxd is the single source of truth shared by ReSide and the
+/// `libimobiledevice` path the delegated signer (Sideloader) uses. This is what
+/// stops ReSide's Pair button from clobbering the signer's trust — both sides
+/// now read and write the one record. See the project-pairing-dual-stack notes.
 ///
 /// This blocks until the user responds to the dialog — `idevice`'s `pair()`
 /// polls while the response is pending. Validation requires real hardware.
@@ -134,6 +137,16 @@ pub async fn pair_device(udid: &str) -> Result<()> {
         AppError::UsbmuxdDown
     })?;
 
+    // Reuse the HostID usbmuxd already holds for this device (left by an earlier
+    // `idevicepair pair` or a prior ReSide pairing) so ReSide and
+    // libimobiledevice keep one shared identity and never churn the device's
+    // trust. Only on a first-ever pairing do we mint a stable, machine-derived
+    // id. Any read error just means "no record yet" — fall back to minting.
+    let host_id = match conn.get_pair_record(udid).await {
+        Ok(existing) => existing.host_id,
+        Err(_) => host_id(),
+    };
+
     let device = conn.get_device(udid).await.map_err(|e| {
         tracing::warn!(error = %e, "device not present in usbmuxd");
         AppError::DeviceOffline
@@ -147,13 +160,23 @@ pub async fn pair_device(udid: &str) -> Result<()> {
     })?;
 
     let pairing = lockdown
-        .pair(host_id(), buid, Some(HOST_NAME))
+        .pair(host_id, buid, Some(HOST_NAME))
         .await
         .map_err(map_pair_error)?;
 
-    let store = PairRecordStore::new(Paths::resolve()?.pair_records_dir());
-    store.save(udid, &pairing)?;
-    tracing::info!("device paired; pair record stored");
+    // Persist into usbmuxd's own store (on Linux this lands in
+    // /var/lib/lockdown/<udid>.plist, written by usbmuxd itself — no root needed
+    // on our side). libimobiledevice validates using the HostID in this record,
+    // so the device just accepted exactly what the signer will present.
+    let bytes = pairing
+        .serialize()
+        .map_err(|e| AppError::Internal(format!("serialize pairing file: {e}")))?;
+    conn.save_pair_record(udid, bytes).await.map_err(|e| {
+        tracing::warn!(error = %e, "usbmuxd SavePairRecord failed");
+        AppError::Internal("could not save pair record to usbmuxd".into())
+    })?;
+
+    tracing::info!("device paired; pair record saved to usbmuxd");
     Ok(())
 }
 
@@ -188,22 +211,25 @@ pub async fn developer_mode_status(udid: &str) -> Result<bool> {
         .map_err(map_service_error)
 }
 
-/// Build a [`PairedUsbProvider`] for a paired device over USB. Requires a stored
-/// pair record (returns [`AppError::DeviceNotTrusted`] otherwise). This is the
-/// reusable entry point for every trusted lockdown service and the RSD tunnel —
-/// the default `IdeviceService::connect()` flow "just works" with it over USB.
+/// Build a [`PairedUsbProvider`] for a paired device over USB. Reads the pairing
+/// record straight from usbmuxd — ReSide's single source of trust — so it works
+/// whether the device was paired via ReSide's Pair button or `idevicepair pair`.
+/// A missing record yields [`AppError::DeviceNotTrusted`] (pair first). This is
+/// the reusable entry point for every trusted lockdown service and the RSD
+/// tunnel — the default `IdeviceService::connect()` flow "just works" over USB.
 pub(crate) async fn paired_provider(udid: &str) -> Result<PairedUsbProvider> {
-    let store = PairRecordStore::new(Paths::resolve()?.pair_records_dir());
-    if !store.exists(udid) {
-        // Without a trusted session we can't reach trusted services; pair first.
-        return Err(AppError::DeviceNotTrusted);
-    }
-    let pairing_file = store.load(udid)?;
-
     let mut conn = UsbmuxdConnection::default().await.map_err(|e| {
         tracing::warn!(error = %e, "could not connect to usbmuxd");
         AppError::UsbmuxdDown
     })?;
+
+    // No record means this host has never been trusted by the device (neither
+    // ReSide nor `idevicepair pair` has run) — surface as "pair first".
+    let pairing_file = conn.get_pair_record(udid).await.map_err(|e| {
+        tracing::debug!(error = %e, "no usbmuxd pair record for device");
+        AppError::DeviceNotTrusted
+    })?;
+
     let device = conn.get_device(udid).await.map_err(|e| {
         tracing::warn!(error = %e, "device not present in usbmuxd");
         AppError::DeviceOffline
@@ -228,10 +254,9 @@ fn map_service_error(e: IdeviceError) -> AppError {
     }
 }
 
-/// An [`IdeviceProvider`] that connects over USB (delegating to usbmuxd) but
-/// supplies ReSide's app-managed pairing record instead of reading usbmuxd's
-/// cache (which we deliberately never populate — see [`pair_record`]). Reusable
-/// for every trusted lockdown service (amfi, installer, image mounter, …).
+/// An [`IdeviceProvider`] that connects over USB (delegating to usbmuxd) and
+/// supplies the pairing record read back from usbmuxd. Reusable for every
+/// trusted lockdown service (amfi, installer, image mounter, …).
 #[derive(Debug)]
 pub(crate) struct PairedUsbProvider {
     inner: UsbmuxdProvider,

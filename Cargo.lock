@@ -5946,6 +5946,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reside-agent"
+version = "0.4.0"
+dependencies = [
+ "reside-core",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "reside-app"
 version = "0.4.0"
 dependencies = [

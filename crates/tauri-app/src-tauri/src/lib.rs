@@ -443,6 +443,63 @@ fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
     }
 }
 
+/// Report whether the background-refresh autopilot is currently enabled, and how
+/// it's wired on this host (systemd timer vs. XDG autostart). Backs the Dashboard
+/// toggle's initial/refreshed state.
+#[tauri::command]
+async fn agent_status(
+    state: tauri::State<'_, AppState>,
+) -> CmdResult<reside_core::refresh::AgentStatus> {
+    Ok(reside_core::refresh::agent::status(&state.paths)?)
+}
+
+/// Turn the background-refresh autopilot on or off. Enabling installs a
+/// `reside-agent` systemd user timer (or an XDG autostart entry on non-systemd
+/// hosts) that runs the same `refresh_due` engine on a ~6h schedule even while
+/// ReSide is closed; disabling removes it. Returns the resulting status.
+#[tauri::command]
+async fn set_background_agent(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> CmdResult<reside_core::refresh::AgentStatus> {
+    use reside_core::refresh::{agent, AgentConfig};
+    let status = if enabled {
+        let cfg = AgentConfig::new(agent_exec_path()?, agent_sideloader_bin());
+        agent::install(&state.paths, &cfg)?
+    } else {
+        agent::uninstall(&state.paths)?
+    };
+    Ok(status)
+}
+
+/// Locate the headless `reside-agent` binary that the trigger should launch. It
+/// ships alongside the app binary (same `target/<profile>/` in dev, same bindir
+/// when packaged), so we resolve it relative to the running executable.
+fn agent_exec_path() -> Result<std::path::PathBuf, AppError> {
+    let exe = std::env::current_exe()
+        .map_err(|e| AppError::Internal(format!("cannot locate the ReSide binary: {e}")))?;
+    let agent = exe
+        .parent()
+        .ok_or_else(|| AppError::Internal("ReSide binary has no parent directory".into()))?
+        .join("reside-agent");
+    if !agent.exists() {
+        return Err(AppError::Internal(format!(
+            "background agent not found at {} — reside-agent must be installed alongside ReSide",
+            agent.display()
+        )));
+    }
+    Ok(agent)
+}
+
+/// The Sideloader path to bake into the agent's environment — the app's own
+/// resolved signer binary, but only when it's absolute. A bare `sideloader` on
+/// `PATH` can't be reproduced in a unit's empty environment, so we leave it unset
+/// and let the agent fall back to `PATH` itself.
+fn agent_sideloader_bin() -> Option<std::path::PathBuf> {
+    let bin = reside_core::signer::sideloader_binary();
+    bin.is_absolute().then_some(bin)
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -512,7 +569,9 @@ pub fn run() {
             install_ipa,
             list_apps,
             refresh_app,
-            refresh_due_now
+            refresh_due_now,
+            agent_status,
+            set_background_agent
         ])
         .run(tauri::generate_context!())
         .expect("error while running ReSide");

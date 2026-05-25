@@ -60,6 +60,14 @@ export function ReSideApp() {
     onSettled: () => apps.refetch(),
   });
 
+  // Background autopilot: whether the systemd timer / autostart trigger is
+  // installed, plus the toggle that installs/removes it.
+  const agent = useQuery({ queryKey: ["agent-status"], queryFn: api.agentStatus, enabled: isTauri() });
+  const setAgent = useMutation({
+    mutationFn: (enabled: boolean) => api.setBackgroundAgent(enabled),
+    onSuccess: () => agent.refetch(),
+  });
+
   const phase: PairPhase = pair.isPending
     ? "pairing"
     : pair.isSuccess
@@ -201,6 +209,11 @@ export function ReSideApp() {
             onRefreshApp={(app) => setRefreshTarget(app)}
             onRefreshAll={() => refreshAll.mutate()}
             refreshingAll={refreshAll.isPending}
+            agentEnabled={agent.data?.enabled ?? false}
+            agentDetail={agent.data?.detail}
+            agentBusy={setAgent.isPending}
+            agentError={setAgent.error ? asCommandError(setAgent.error).remediation : null}
+            onToggleAgent={(enabled) => setAgent.mutate(enabled)}
             onNavigate={(id) => {
               // Only "Devices" routes anywhere yet — back to pairing. The rest are
               // inert until their phases land.

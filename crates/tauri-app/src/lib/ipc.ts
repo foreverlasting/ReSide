@@ -158,6 +158,13 @@ export interface RefreshAppArgs {
   installationId: number;
 }
 
+/** State of the background-refresh autopilot (mirrors Rust `AgentStatus`). */
+export interface AgentStatus {
+  enabled: boolean;
+  mechanism: "systemd" | "xdg_autostart";
+  detail: string;
+}
+
 export const api = {
   runSetupCheck: () => invoke<SetupReport>("run_setup_check"),
   getTunnelStatus: () => invoke<TunnelPill>("get_tunnel_status"),
@@ -180,4 +187,8 @@ export const api = {
   refreshApp: ({ operationId, installationId }: RefreshAppArgs) =>
     invoke<RefreshAppOutcome>("refresh_app", { operationId, installationId }),
   refreshDueNow: () => invoke<RefreshSummary>("refresh_due_now"),
+  // Background autopilot (task 11c slice 2).
+  agentStatus: () => invoke<AgentStatus>("agent_status"),
+  setBackgroundAgent: (enabled: boolean) =>
+    invoke<AgentStatus>("set_background_agent", { enabled }),
 };

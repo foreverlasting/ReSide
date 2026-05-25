@@ -88,12 +88,14 @@ export const Sidebar = ({
   deviceConnected = true,
   device,
   agentActive = true,
+  agentDetail,
   onNavigate,
 }: {
   active?: string;
   deviceConnected?: boolean;
   device?: DeviceInfo | null;
   agentActive?: boolean;
+  agentDetail?: string;
   onNavigate?: (id: string) => void;
 }) => {
   // `device === undefined` means gallery mode; otherwise we're live.
@@ -206,7 +208,7 @@ export const Sidebar = ({
             <StatusDot tone={agentActive ? "success" : "neutral"} className="ml-auto" />
           </div>
           <div className="text-[10.5px] text-slate-500">
-            {agentActive ? "Next sweep in 6h 22m" : "Set up in a later update"}
+            {agentDetail ?? (agentActive ? "Running in the background" : "Off — refreshes only while open")}
           </div>
         </div>
       </div>

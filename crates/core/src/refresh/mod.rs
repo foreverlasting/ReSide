@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod scheduler;
 
+pub use agent::{AgentConfig, AgentMechanism, AgentMode, AgentStatus, DEFAULT_INTERVAL_HOURS};
 pub use scheduler::{
     due_installs, refresh_due, refresh_installation, DueInstall, RefreshOutcome, RefreshReport,
     RefreshSummary, REFRESH_LEAD_SECS,

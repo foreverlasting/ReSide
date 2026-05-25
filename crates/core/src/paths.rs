@@ -85,6 +85,25 @@ impl Paths {
         self.config.join("config.toml")
     }
 
+    /// The XDG config *base* (e.g. `~/.config`) — the parent of our per-app
+    /// config dir. systemd user units and XDG autostart entries live alongside
+    /// our dir, not inside it, so they hang off this base rather than `config`.
+    fn config_base(&self) -> &Path {
+        self.config.parent().unwrap_or(&self.config)
+    }
+
+    /// Where the background agent's systemd *user* units are installed
+    /// (`~/.config/systemd/user`). `systemctl --user` reads from here.
+    pub fn systemd_user_dir(&self) -> PathBuf {
+        self.config_base().join("systemd").join("user")
+    }
+
+    /// Where the XDG autostart `.desktop` fallback lives on non-systemd hosts
+    /// (`~/.config/autostart`).
+    pub fn autostart_dir(&self) -> PathBuf {
+        self.config_base().join("autostart")
+    }
+
     // ---- state dir contents ----
     pub fn agent_pid_file(&self) -> PathBuf {
         self.state.join("agent.pid")
@@ -131,5 +150,14 @@ mod tests {
         assert!(paths.state_dir().is_dir());
         assert_eq!(paths.database_file().file_name().unwrap(), "data.db");
         assert_eq!(paths.tunneld_socket().file_name().unwrap(), "tunneld.sock");
+
+        // Agent unit / autostart locations hang off the config base, not our
+        // per-app config dir.
+        assert!(paths.systemd_user_dir().ends_with("systemd/user"));
+        assert!(paths.autostart_dir().ends_with("autostart"));
+        assert_eq!(
+            paths.systemd_user_dir().parent().unwrap().parent().unwrap(),
+            paths.config_base()
+        );
     }
 }

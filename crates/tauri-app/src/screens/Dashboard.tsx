@@ -40,6 +40,11 @@ export function Dashboard({
   onRefreshApp,
   onRefreshAll,
   refreshingAll = false,
+  agentEnabled = false,
+  agentDetail,
+  agentBusy = false,
+  agentError,
+  onToggleAgent,
 }: {
   dark?: boolean;
   empty?: boolean;
@@ -52,6 +57,11 @@ export function Dashboard({
   onRefreshApp?: (app: InstalledApp) => void;
   onRefreshAll?: () => void;
   refreshingAll?: boolean;
+  agentEnabled?: boolean;
+  agentDetail?: string;
+  agentBusy?: boolean;
+  agentError?: string | null;
+  onToggleAgent?: (enabled: boolean) => void;
 }) {
   // In live mode the apps area reflects the real install list.
   const noApps = live ? apps.length === 0 : empty;
@@ -89,7 +99,13 @@ export function Dashboard({
     >
       <div className="flex h-full">
         {live ? (
-          <Sidebar active="apps" device={device ?? null} agentActive={false} onNavigate={onNavigate} />
+          <Sidebar
+            active="apps"
+            device={device ?? null}
+            agentActive={agentEnabled}
+            agentDetail={agentDetail}
+            onNavigate={onNavigate}
+          />
         ) : (
           <Sidebar active="apps" deviceConnected={!empty} />
         )}
@@ -129,6 +145,25 @@ export function Dashboard({
                   onClick={onRefreshAll}
                 >
                   {refreshingAll ? "Refreshing…" : "Refresh all due"}
+                </Button>
+              )}
+              {/* The autopilot toggle: installs/removes the systemd timer (or
+                  autostart fallback) that runs "Refresh all due" while ReSide
+                  is closed. `title` carries the host-specific explanation. */}
+              {!noApps && live && onToggleAgent && (
+                <Button
+                  variant={agentEnabled ? "default" : "outline"}
+                  size="sm"
+                  iconLeft="refresh"
+                  disabled={agentBusy}
+                  onClick={() => onToggleAgent(!agentEnabled)}
+                  title={agentError ?? agentDetail}
+                >
+                  {agentBusy
+                    ? "Saving…"
+                    : agentEnabled
+                      ? "Auto-refresh: On"
+                      : "Auto-refresh: Off"}
                 </Button>
               )}
               <Button

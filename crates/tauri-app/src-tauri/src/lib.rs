@@ -355,6 +355,94 @@ async fn list_apps(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Installed
     Ok(rows)
 }
 
+// ---------------------------------------------------------------------------
+// Auto-refresh (task 11c). A "refresh" re-signs + re-installs the stored IPA
+// to reset the free profile's 7-day clock. The engine lives in
+// `reside_core::refresh`; these commands are the UI-/agent-facing triggers.
+// ---------------------------------------------------------------------------
+
+/// Seconds since the Unix epoch (saturating to 0 before 1970, which never happens).
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshAppOutcome {
+    installation_id: i64,
+    new_expiration_ts: i64,
+}
+
+/// Force a re-sign + re-install of one installation now, regardless of how close
+/// it is to expiry — the per-app "Refresh now" button (and the hardware test).
+///
+/// Progress streams on `operation_{operation_id}`. On a trusted machine this
+/// needs no 2FA; if Apple ever demands one it returns `AppleAuth2FARequired`
+/// rather than hanging (the same loud-failure contract the agent relies on).
+#[tauri::command]
+async fn refresh_app(
+    state: tauri::State<'_, AppState>,
+    operation_id: String,
+    installation_id: i64,
+) -> CmdResult<RefreshAppOutcome> {
+    let op = state.ops.start(operation_id);
+    // refresh_installation emits the terminal Done/Failed event itself.
+    let new_expiration_ts = reside_core::refresh::refresh_installation(
+        &state.db,
+        &state.store,
+        Some(&op),
+        installation_id,
+        unix_now(),
+    )
+    .await?;
+    Ok(RefreshAppOutcome {
+        installation_id,
+        new_expiration_ts,
+    })
+}
+
+/// Refresh every install whose free profile is due (within the lead window),
+/// under the single-writer lock. This is exactly what the background agent will
+/// call on its timer; the "Refresh all" button invokes it on demand. Raises a
+/// desktop notification for anything that needs the user (e.g. re-auth).
+#[tauri::command]
+async fn refresh_due_now(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> CmdResult<reside_core::refresh::RefreshSummary> {
+    let summary = reside_core::refresh::refresh_due(
+        &state.db,
+        &state.store,
+        &state.paths.agent_pid_file(),
+        unix_now(),
+        reside_core::refresh::REFRESH_LEAD_SECS,
+    )
+    .await?;
+
+    for report in summary.needs_attention() {
+        notify(
+            &app,
+            "ReSide couldn't auto-refresh an app",
+            &format!(
+                "{} needs you to sign in to Apple again to keep it working.",
+                report.display_name
+            ),
+        );
+    }
+    Ok(summary)
+}
+
+/// Fire a desktop notification (best-effort; failures are logged, not surfaced).
+fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
+        tracing::warn!(error = %e, "failed to show desktop notification");
+    }
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -422,7 +510,9 @@ pub fn run() {
             set_apple_credentials,
             sign_out,
             install_ipa,
-            list_apps
+            list_apps,
+            refresh_app,
+            refresh_due_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running ReSide");

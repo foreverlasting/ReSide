@@ -37,6 +37,9 @@ export function Dashboard({
   toolbarExtra,
   onNavigate,
   onImport,
+  onRefreshApp,
+  onRefreshAll,
+  refreshingAll = false,
 }: {
   dark?: boolean;
   empty?: boolean;
@@ -46,6 +49,9 @@ export function Dashboard({
   toolbarExtra?: ReactNode;
   onNavigate?: (id: string) => void;
   onImport?: () => void;
+  onRefreshApp?: (app: InstalledApp) => void;
+  onRefreshAll?: () => void;
+  refreshingAll?: boolean;
 }) {
   // In live mode the apps area reflects the real install list.
   const noApps = live ? apps.length === 0 : empty;
@@ -108,10 +114,21 @@ export function Dashboard({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {/* "Refresh all" arrives with auto-refresh (11c); hidden in live until then. */}
+              {/* "Refresh all" runs the same due-check the agent will (task 11c). */}
               {!noApps && !live && (
                 <Button variant="outline" size="sm" iconLeft="refresh">
                   Refresh all
+                </Button>
+              )}
+              {!noApps && live && onRefreshAll && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  iconLeft="refresh"
+                  disabled={refreshingAll}
+                  onClick={onRefreshAll}
+                >
+                  {refreshingAll ? "Refreshing…" : "Refresh all due"}
                 </Button>
               )}
               <Button
@@ -128,7 +145,7 @@ export function Dashboard({
           {noApps ? (
             <EmptyDashboard live={live} onChoose={onImport} />
           ) : live ? (
-            <LiveApps apps={apps} />
+            <LiveApps apps={apps} onRefreshApp={onRefreshApp} />
           ) : (
             <FilledDashboard />
           )}
@@ -215,12 +232,23 @@ function toSampleApp(a: InstalledApp): SampleApp {
   };
 }
 
-function LiveApps({ apps }: { apps: InstalledApp[] }) {
+function LiveApps({
+  apps,
+  onRefreshApp,
+}: {
+  apps: InstalledApp[];
+  onRefreshApp?: (app: InstalledApp) => void;
+}) {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
       <div className="grid grid-cols-2 gap-3">
         {apps.map((a) => (
-          <AppCard key={a.installationId} app={toSampleApp(a)} live />
+          <AppCard
+            key={a.installationId}
+            app={toSampleApp(a)}
+            live
+            onRefresh={onRefreshApp ? () => onRefreshApp(a) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -278,7 +306,15 @@ function EmptyDashboard({ live = false, onChoose }: { live?: boolean; onChoose?:
   );
 }
 
-function AppCard({ app, live = false }: { app: SampleApp; live?: boolean }) {
+function AppCard({
+  app,
+  live = false,
+  onRefresh,
+}: {
+  app: SampleApp;
+  live?: boolean;
+  onRefresh?: () => void;
+}) {
   const { name, bundle, version, color, expiresDays, status } = app;
   const statusMap: Record<AppStatus, { tone: "success" | "warning" | "info" | "danger"; label: string; dot: "success" | "warning" | "info" | "danger"; pulse?: boolean }> = {
     healthy: { tone: "success", label: "Healthy", dot: "success" },
@@ -351,11 +387,20 @@ function AppCard({ app, live = false }: { app: SampleApp; live?: boolean }) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          {/* Manual refresh lands with auto-refresh (11c); inert button hidden in live. */}
-          {!live && (
+          {/* Mock cards keep an inert button; live cards wire it to refresh (11c). */}
+          {!live ? (
             <button className="text-[11.5px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100">
               Refresh now
             </button>
+          ) : (
+            onRefresh && (
+              <button
+                onClick={onRefresh}
+                className="text-[11.5px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+              >
+                Refresh now
+              </button>
+            )
           )}
         </div>
       </CardContent>

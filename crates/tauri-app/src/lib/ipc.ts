@@ -123,6 +123,41 @@ export interface InstallArgs {
   twoFaCode?: string;
 }
 
+/** Returned by `refresh_app` on a successful single-app refresh. */
+export interface RefreshAppOutcome {
+  installationId: number;
+  newExpirationTs: number;
+}
+
+/** Per-install result inside a batch refresh. Field names mirror the Rust
+ *  `RefreshOutcome` (enum tag `result`; inner fields stay snake_case). */
+export type RefreshOutcome =
+  | { result: "refreshed"; new_expiration_ts: number }
+  | { result: "retrying"; category: string; next_run: number }
+  | { result: "needs_attention"; category: string };
+
+export interface RefreshReport {
+  installationId: number;
+  bundleId: string;
+  displayName: string;
+  outcome: RefreshOutcome;
+}
+
+/** Result of a `refresh_due_now` batch. `ran` is false when another process
+ *  held the single-writer lock and we declined to run concurrently. */
+export interface RefreshSummary {
+  ran: boolean;
+  attempted: number;
+  refreshed: number;
+  reports: RefreshReport[];
+}
+
+/** Arguments for `refresh_app`. */
+export interface RefreshAppArgs {
+  operationId: string;
+  installationId: number;
+}
+
 export const api = {
   runSetupCheck: () => invoke<SetupReport>("run_setup_check"),
   getTunnelStatus: () => invoke<TunnelPill>("get_tunnel_status"),
@@ -141,4 +176,8 @@ export const api = {
   installIpa: ({ operationId, path, udid, twoFaCode }: InstallArgs) =>
     invoke<InstallOutcome>("install_ipa", { operationId, path, udid, twoFaCode }),
   listApps: () => invoke<InstalledApp[]>("list_apps"),
+  // Auto-refresh (task 11c).
+  refreshApp: ({ operationId, installationId }: RefreshAppArgs) =>
+    invoke<RefreshAppOutcome>("refresh_app", { operationId, installationId }),
+  refreshDueNow: () => invoke<RefreshSummary>("refresh_due_now"),
 };

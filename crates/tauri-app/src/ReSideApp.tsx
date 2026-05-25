@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Setup } from "./screens/Setup";
 import { Dashboard } from "./screens/Dashboard";
 import { ImportModal } from "./screens/ImportModal";
+import { RefreshModal } from "./screens/RefreshModal";
 import {
   Pairing,
   type DevModeState,
@@ -15,7 +16,7 @@ import {
   type TunnelPhase,
   type WifiPhase,
 } from "./screens/Pairing";
-import { api, asCommandError, isTauri, type DeviceInfo } from "./lib/ipc";
+import { api, asCommandError, isTauri, type DeviceInfo, type InstalledApp } from "./lib/ipc";
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
@@ -26,6 +27,7 @@ export function ReSideApp() {
   const [screen, setScreen] = useState<Screen>("setup");
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [refreshTarget, setRefreshTarget] = useState<InstalledApp | null>(null);
 
   const setup = useQuery({ queryKey: ["setup-check"], queryFn: api.runSetupCheck });
   const tunnel = useQuery({ queryKey: ["tunnel-status"], queryFn: api.getTunnelStatus });
@@ -49,6 +51,13 @@ export function ReSideApp() {
   const pair = useMutation({
     mutationFn: (udid: string) => api.pairDevice(udid),
     onSuccess: () => devices.refetch(),
+  });
+
+  // "Refresh all due" — the same due-check the background agent will run on a
+  // timer. Refetch the grid afterward so reset clocks show immediately.
+  const refreshAll = useMutation({
+    mutationFn: () => api.refreshDueNow(),
+    onSettled: () => apps.refetch(),
   });
 
   const phase: PairPhase = pair.isPending
@@ -189,6 +198,9 @@ export function ReSideApp() {
             apps={apps.data ?? []}
             toolbarExtra={toolbarExtra}
             onImport={target ? () => setImporting(true) : undefined}
+            onRefreshApp={(app) => setRefreshTarget(app)}
+            onRefreshAll={() => refreshAll.mutate()}
+            refreshingAll={refreshAll.isPending}
             onNavigate={(id) => {
               // Only "Devices" routes anywhere yet — back to pairing. The rest are
               // inert until their phases land.
@@ -203,6 +215,13 @@ export function ReSideApp() {
                 setImporting(false);
                 apps.refetch();
               }}
+            />
+          )}
+          {refreshTarget && (
+            <RefreshModal
+              app={refreshTarget}
+              onClose={() => setRefreshTarget(null)}
+              onRefreshed={() => apps.refetch()}
             />
           )}
         </>

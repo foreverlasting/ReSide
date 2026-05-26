@@ -29,6 +29,9 @@ const KEY_APPLE_PASSWORD: &str = "reside.apple_password";
 const ENV_NONINTERACTIVE: &str = "RESIDE_NONINTERACTIVE";
 /// Env var overriding the Sideloader binary location (else `sideloader` on PATH).
 const ENV_SIDELOADER_BIN: &str = "RESIDE_SIDELOADER_BIN";
+/// The libimobiledevice variable selecting which muxer the fork talks to. We set
+/// it to the netmuxd bridge for Wi-Fi installs and clear it for USB ones.
+const ENV_USBMUXD_SOCKET: &str = "USBMUXD_SOCKET_ADDRESS";
 
 /// Marker the fork prints to stderr when Apple requires 2FA during an
 /// automated run (see the fork's `cli_frontend.d`).
@@ -144,25 +147,40 @@ fn classify(outcome: &RawOutcome) -> Result<()> {
 /// Run a Sideloader subcommand non-interactively, feeding credentials on stdin.
 /// `extra_stdin_lines` are appended after the Apple ID + password (e.g. a 2FA
 /// code when re-invoking after [`AppError::AppleAuth2faRequired`]).
+///
+/// `muxer_socket` selects how the fork reaches the device, via the
+/// `USBMUXD_SOCKET_ADDRESS` libimobiledevice honours: `Some(addr)` points it at
+/// the netmuxd Wi-Fi bridge; `None` clears the variable so it uses the default
+/// USB usbmuxd — set explicitly either way so the route never depends on a stray
+/// value in ReSide's own environment.
 async fn run(
     creds: &AppleCredentials,
     args: &[&str],
     extra_stdin_lines: &[&str],
+    muxer_socket: Option<&str>,
 ) -> Result<RawOutcome> {
     let bin = sideloader_binary();
-    let mut child = Command::new(&bin)
+    let mut command = Command::new(&bin);
+    command
         .args(args)
         .env(ENV_NONINTERACTIVE, "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            AppError::Internal(format!(
-                "could not launch the Sideloader signer ({}): {e}",
-                bin.display()
-            ))
-        })?;
+        .stderr(Stdio::piped());
+    match muxer_socket {
+        Some(addr) => {
+            command.env(ENV_USBMUXD_SOCKET, addr);
+        }
+        None => {
+            command.env_remove(ENV_USBMUXD_SOCKET);
+        }
+    }
+    let mut child = command.spawn().map_err(|e| {
+        AppError::Internal(format!(
+            "could not launch the Sideloader signer ({}): {e}",
+            bin.display()
+        ))
+    })?;
 
     {
         let mut stdin = child
@@ -216,7 +234,8 @@ async fn run(
 /// This is the Rust-side equivalent of the `sideloader team list` check that was
 /// validated manually, and the smoke test that the bridge works end-to-end.
 pub async fn verify_login(creds: &AppleCredentials) -> Result<()> {
-    let outcome = run(creds, &["team", "list"], &[]).await?;
+    // `team list` talks only to Apple, not the device, so no muxer is involved.
+    let outcome = run(creds, &["team", "list"], &[], None).await?;
     classify(&outcome)
 }
 
@@ -233,6 +252,10 @@ pub struct InstallRequest<'a> {
     /// first attempt this is `None`; the fork only asks when the device isn't
     /// already trusted.
     pub two_fa_code: Option<&'a str>,
+    /// Where the fork should reach the device: `Some(addr)` for the netmuxd Wi-Fi
+    /// bridge, `None` for the default USB usbmuxd. Resolved by
+    /// [`crate::transport::muxer::route_to`] just before the call.
+    pub muxer_socket: Option<&'a str>,
 }
 
 /// Sign and install an IPA by delegating to the forked `sideloader install`,
@@ -256,7 +279,7 @@ pub async fn install(req: &InstallRequest<'_>) -> Result<()> {
         "--singlethread",
     ];
     let extra: Vec<&str> = req.two_fa_code.into_iter().collect();
-    let outcome = run(req.creds, &args, &extra).await?;
+    let outcome = run(req.creds, &args, &extra, req.muxer_socket).await?;
     classify(&outcome)
 }
 

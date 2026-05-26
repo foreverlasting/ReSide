@@ -308,7 +308,7 @@ function EmptyDashboard({ live = false, onChoose }: { live?: boolean; onChoose?:
           <p className="mx-auto mt-1 max-w-[380px] text-[13px] text-slate-500 dark:text-slate-400">
             {live
               ? "Importing and signing IPAs is the next milestone. Your device is paired and Wi-Fi reachability is confirmed — the refresh foundation is in place."
-              : "Drop an .ipa file anywhere on this window or click the button below. ReSide will sign it with your Apple ID and install it over USB."}
+              : "Drop an .ipa file anywhere on this window or click the button below. ReSide will sign it with your Apple ID and install it onto your iPhone."}
           </p>
         </div>
         <div className="mt-1 flex items-center gap-2">

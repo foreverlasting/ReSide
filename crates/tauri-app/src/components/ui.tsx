@@ -210,12 +210,30 @@ export const Switch = ({
 );
 
 // -------------------- Progress --------------------
-export const Progress = ({ value = 0, className = "" }: { value?: number; className?: string }) => (
+// `indeterminate` shows a sliding "working" bar instead of a fixed width — for
+// steps whose duration we can't measure (the signer is a black box), so the bar
+// reads as active rather than frozen at an arbitrary percentage.
+export const Progress = ({
+  value = 0,
+  indeterminate = false,
+  className = "",
+}: {
+  value?: number;
+  indeterminate?: boolean;
+  className?: string;
+}) => (
   <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800", className)}>
-    <div
-      className="h-full rounded-full bg-slate-900 dark:bg-slate-100 transition-all"
-      style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
-    />
+    {indeterminate ? (
+      <div
+        className="h-full w-1/4 rounded-full bg-slate-900 dark:bg-slate-100"
+        style={{ animation: "indeterminate-slide 1.1s ease-in-out infinite" }}
+      />
+    ) : (
+      <div
+        className="h-full rounded-full bg-slate-900 dark:bg-slate-100 transition-all"
+        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+      />
+    )}
   </div>
 );
 

@@ -180,10 +180,10 @@ export function ImportModal({
             </div>
           )}
 
-          {/* Progress */}
+          {/* Progress: indeterminate, since the signer reports no measurable %. */}
           {install.isPending && (
             <div className="space-y-1.5">
-              <Progress value={op ? op.progress * 100 : 10} />
+              <Progress indeterminate />
               <div className="text-[12px] text-slate-500">
                 {op ? STAGE_TEXT[op.stage] : "Starting…"}
               </div>

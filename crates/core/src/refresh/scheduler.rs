@@ -315,6 +315,22 @@ async fn refresh_inner(
         return Err(AppError::AppleAuthCredentialsInvalid);
     };
 
+    // Pick the transport before signing: USB if the cable is in, else bring up
+    // the Wi-Fi bridge (this may wait for mDNS discovery, hence the early stage).
+    if let Some(op) = ops {
+        op.stage(
+            OperationStage::Preparing,
+            0.15,
+            Some("Locating your iPhone…".into()),
+        );
+    }
+    let muxer_socket = crate::transport::muxer::route_to(&install.device_udid).await?;
+    let via = if muxer_socket.is_some() {
+        " over Wi-Fi"
+    } else {
+        ""
+    };
+
     let ipa_path = PathBuf::from(&install.source_ipa_path);
     let size = std::fs::metadata(&ipa_path)
         .map_err(|e| {
@@ -336,7 +352,7 @@ async fn refresh_inner(
         op.stage(
             OperationStage::Signing,
             0.3,
-            Some(format!("Re-signing {}…", meta.display_name)),
+            Some(format!("Re-signing {}{via}…", meta.display_name)),
         );
     }
     // Never supply a 2FA code unattended: a challenge must fail loudly, not hang.
@@ -345,6 +361,7 @@ async fn refresh_inner(
         ipa_path: &ipa_path,
         udid: &install.device_udid,
         two_fa_code: None,
+        muxer_socket: muxer_socket.as_deref(),
     })
     .await?;
 

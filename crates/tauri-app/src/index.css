@@ -8,6 +8,17 @@ body {
   font-family: "Geist", system-ui, sans-serif;
 }
 
+/* Indeterminate progress: a short bar that slides across, used when the work
+   (the black-box signer) reports no measurable percentage. */
+@keyframes indeterminate-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
 [data-theme="dark"] {
   color-scheme: dark;
 }

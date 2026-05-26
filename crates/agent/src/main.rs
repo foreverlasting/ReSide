@@ -92,7 +92,12 @@ impl AgentContext {
             unix_now(),
             refresh::REFRESH_LEAD_SECS,
         )
-        .await?;
+        .await;
+
+        // Stop any Wi-Fi bridge this sweep started, whatever the outcome — the
+        // agent is on-demand, so netmuxd must not linger between 6-hourly runs.
+        reside_core::transport::muxer::shutdown().await;
+        let summary = summary?;
 
         if !summary.ran {
             tracing::info!("sweep skipped: the app or another sweep holds the lock");

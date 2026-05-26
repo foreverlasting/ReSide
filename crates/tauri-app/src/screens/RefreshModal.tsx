@@ -78,13 +78,14 @@ export function RefreshModal({
 
           <p className="text-[12.5px] text-slate-600 dark:text-slate-400">
             Re-signs and re-installs this app with your stored Apple ID, resetting its
-            7-day clock. Keep your iPhone connected over USB.
+            7-day clock. Keep your iPhone unlocked and reachable — by cable or on the
+            same Wi-Fi.
           </p>
 
-          {/* Progress */}
+          {/* Progress: indeterminate, since the signer reports no measurable %. */}
           {refresh.isPending && (
             <div className="space-y-1.5">
-              <Progress value={op ? op.progress * 100 : 10} />
+              <Progress indeterminate />
               <div className="text-[12px] text-slate-500">
                 {op ? STAGE_TEXT[op.stage] : "Starting…"}
               </div>

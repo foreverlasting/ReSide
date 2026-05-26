@@ -23,10 +23,13 @@
 //! tries again on the next tick. "Yield" means *never collide*, not *never run
 //! while the app is open*.
 //!
-//! ## Scope: USB-only for now
-//! 11c refreshes over the USB sideloader path, so the units intentionally do
-//! **not** depend on the Wi-Fi `reside-tunneld` service (that's 11d). "Unattended"
-//! here means "keep the iPhone plugged in."
+//! ## Transport: USB or Wi-Fi, chosen at refresh time
+//! The agent runs the same engine the UI does, which now picks the transport per
+//! refresh ([`crate::transport::muxer::route_to`]): the cable if it's attached,
+//! else an on-demand netmuxd Wi-Fi bridge. So the units bake in **both** the
+//! Sideloader and netmuxd binary paths (user services start with a bare
+//! environment). There is still no standing daemon dependency — netmuxd is
+//! started only for a sweep that needs Wi-Fi and stopped when it finishes.
 
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
@@ -97,17 +100,26 @@ pub struct AgentConfig {
     /// agent would fall back to bare `sideloader` on `PATH` (see
     /// [`crate::signer::sideloader_binary`]). `None` => rely on `PATH`.
     pub sideloader_bin: Option<PathBuf>,
+    /// The netmuxd binary path to bake in, for the same reason — without it an
+    /// unattended Wi-Fi refresh couldn't find the bridge (see
+    /// [`crate::transport::muxer::netmuxd_binary`]). `None` => rely on `PATH`.
+    pub netmuxd_bin: Option<PathBuf>,
     /// Sweep cadence in hours (systemd timer / autostart-loop sleep).
     pub interval_hours: u32,
 }
 
 impl AgentConfig {
     /// A config pointing at `exec_path` with the default cadence and the given
-    /// (optional) Sideloader path.
-    pub fn new(exec_path: impl Into<PathBuf>, sideloader_bin: Option<PathBuf>) -> Self {
+    /// (optional) Sideloader and netmuxd paths.
+    pub fn new(
+        exec_path: impl Into<PathBuf>,
+        sideloader_bin: Option<PathBuf>,
+        netmuxd_bin: Option<PathBuf>,
+    ) -> Self {
         Self {
             exec_path: exec_path.into(),
             sideloader_bin,
+            netmuxd_bin,
             interval_hours: DEFAULT_INTERVAL_HOURS,
         }
     }
@@ -142,8 +154,8 @@ pub fn detect_mechanism() -> AgentMechanism {
 // --- pure generators (unit-tested) -------------------------------------------
 
 /// The `reside-agent.service` text: a `oneshot` that runs the agent once.
-/// Deliberately has no `[Install]` (the timer pulls it) and **no dependency on
-/// `reside-tunneld`** — 11c is USB-only.
+/// Deliberately has no `[Install]` (the timer pulls it) and **no dependency on a
+/// standing `reside-tunneld`** — Wi-Fi uses an on-demand netmuxd instead.
 pub fn service_unit(cfg: &AgentConfig) -> String {
     let mut s = String::new();
     s.push_str("[Unit]\n");
@@ -157,6 +169,14 @@ pub fn service_unit(cfg: &AgentConfig) -> String {
         // path in because user services don't inherit the desktop environment.
         s.push_str(&format!(
             "Environment=RESIDE_SIDELOADER_BIN={}\n",
+            bin.display()
+        ));
+    }
+    if let Some(bin) = &cfg.netmuxd_bin {
+        // Likewise the Wi-Fi bridge, so a sweep with the cable out can still reach
+        // the iPhone over the network.
+        s.push_str(&format!(
+            "Environment=RESIDE_NETMUXD_BIN={}\n",
             bin.display()
         ));
     }
@@ -193,14 +213,23 @@ pub fn timer_unit(cfg: &AgentConfig) -> String {
 /// login (autostart fires once, so the agent must self-schedule). Sets the
 /// Sideloader env inline via `env` since `.desktop` has no environment field.
 pub fn autostart_desktop(cfg: &AgentConfig) -> String {
-    let exec = match &cfg.sideloader_bin {
-        Some(bin) => format!(
-            "env RESIDE_SIDELOADER_BIN={} {} {}",
-            bin.display(),
+    // `.desktop` has no environment field, so prefix any baked paths via `env`.
+    let mut envs = String::new();
+    if let Some(bin) = &cfg.sideloader_bin {
+        envs.push_str(&format!("RESIDE_SIDELOADER_BIN={} ", bin.display()));
+    }
+    if let Some(bin) = &cfg.netmuxd_bin {
+        envs.push_str(&format!("RESIDE_NETMUXD_BIN={} ", bin.display()));
+    }
+    let exec = if envs.is_empty() {
+        format!("{} {}", cfg.exec_path.display(), AgentMode::Loop.as_arg())
+    } else {
+        format!(
+            "env {}{} {}",
+            envs,
             cfg.exec_path.display(),
             AgentMode::Loop.as_arg()
-        ),
-        None => format!("{} {}", cfg.exec_path.display(), AgentMode::Loop.as_arg()),
+        )
     };
     format!(
         "[Desktop Entry]\n\
@@ -251,12 +280,10 @@ fn detail_for(mechanism: AgentMechanism, enabled: bool) -> String {
     match (mechanism, enabled) {
         (_, false) => "ReSide only refreshes apps while it's open.".into(),
         (AgentMechanism::Systemd, true) => {
-            "On — checks every 6 hours, even when ReSide is closed. Keep your iPhone plugged in."
-                .into()
+            "On — checks every 6 hours, even when ReSide is closed, over USB or Wi-Fi.".into()
         }
         (AgentMechanism::XdgAutostart, true) => {
-            "On — runs at login (your system has no timed-task service). Keep your iPhone plugged in."
-                .into()
+            "On — runs at login (your system has no timed-task service), over USB or Wi-Fi.".into()
         }
     }
 }
@@ -344,7 +371,11 @@ mod tests {
     use super::*;
 
     fn cfg() -> AgentConfig {
-        AgentConfig::new("/usr/bin/reside-agent", Some("/opt/sideloader".into()))
+        AgentConfig::new(
+            "/usr/bin/reside-agent",
+            Some("/opt/sideloader".into()),
+            Some("/opt/netmuxd".into()),
+        )
     }
 
     #[test]
@@ -358,24 +389,26 @@ mod tests {
     }
 
     #[test]
-    fn service_unit_runs_agent_once_with_signer_env_and_no_tunnel_dep() {
+    fn service_unit_runs_agent_once_with_binary_envs_and_no_standing_tunnel_dep() {
         let s = service_unit(&cfg());
         assert!(s.contains("Type=oneshot"));
         assert!(s.contains("ExecStart=/usr/bin/reside-agent run"));
         assert!(s.contains("Environment=RESIDE_SIDELOADER_BIN=/opt/sideloader"));
-        // 11c is USB-only: the unit must not chain the Wi-Fi tunnel service.
+        // The Wi-Fi bridge is baked in too, but on-demand: no standing daemon dep.
+        assert!(s.contains("Environment=RESIDE_NETMUXD_BIN=/opt/netmuxd"));
         assert!(
             !s.contains("reside-tunneld"),
-            "agent must not depend on the Wi-Fi tunnel service in 11c"
+            "agent must not depend on a standing Wi-Fi tunnel service"
         );
         // No [Install]: the timer activates the service, not a target want.
         assert!(!s.contains("[Install]"));
     }
 
     #[test]
-    fn service_unit_omits_env_when_no_signer_path() {
-        let s = service_unit(&AgentConfig::new("/usr/bin/reside-agent", None));
+    fn service_unit_omits_env_when_no_binary_paths() {
+        let s = service_unit(&AgentConfig::new("/usr/bin/reside-agent", None, None));
         assert!(!s.contains("RESIDE_SIDELOADER_BIN"));
+        assert!(!s.contains("RESIDE_NETMUXD_BIN"));
         assert!(s.contains("ExecStart=/usr/bin/reside-agent run"));
     }
 
@@ -401,8 +434,18 @@ mod tests {
     fn autostart_uses_loop_mode_with_inline_env() {
         let d = autostart_desktop(&cfg());
         assert!(d.contains("Type=Application"));
-        assert!(d.contains("env RESIDE_SIDELOADER_BIN=/opt/sideloader /usr/bin/reside-agent loop"));
+        assert!(d.contains(
+            "env RESIDE_SIDELOADER_BIN=/opt/sideloader RESIDE_NETMUXD_BIN=/opt/netmuxd \
+             /usr/bin/reside-agent loop"
+        ));
         assert!(d.contains("X-GNOME-Autostart-enabled=true"));
+    }
+
+    #[test]
+    fn autostart_omits_env_prefix_when_no_binary_paths() {
+        let d = autostart_desktop(&AgentConfig::new("/usr/bin/reside-agent", None, None));
+        assert!(d.contains("Exec=/usr/bin/reside-agent loop"));
+        assert!(!d.contains("env "));
     }
 
     #[test]

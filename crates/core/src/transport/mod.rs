@@ -5,5 +5,6 @@
 //! strategy can be contributed later without restructuring. Phase 1.
 
 pub mod mdns_discovery;
+pub mod muxer;
 pub mod remote_xpc;
 pub mod tunneld;

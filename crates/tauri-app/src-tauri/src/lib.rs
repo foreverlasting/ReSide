@@ -240,16 +240,31 @@ async fn install_ipa(
         let stored = state.ipa_store.store_file(&path)?;
         let meta = reside_core::ipa_meta::read_ipa_metadata(&stored.path)?;
 
+        // Pick the transport (USB cable, else bring up the Wi-Fi bridge) before
+        // signing so the fork is pointed at the right muxer.
+        op.stage(
+            OperationStage::Preparing,
+            0.2,
+            Some("Locating your iPhone…".into()),
+        );
+        let muxer_socket = reside_core::transport::muxer::route_to(&udid).await?;
+        let via = if muxer_socket.is_some() {
+            " over Wi-Fi"
+        } else {
+            ""
+        };
+
         op.stage(
             OperationStage::Signing,
             0.3,
-            Some(format!("Signing {}…", meta.display_name)),
+            Some(format!("Signing {}{via}…", meta.display_name)),
         );
         let req = InstallRequest {
             creds: &creds,
             ipa_path: &stored.path,
             udid: &udid,
             two_fa_code: two_fa_code.as_deref(),
+            muxer_socket: muxer_socket.as_deref(),
         };
         signer::install(&req).await?;
 
@@ -464,7 +479,11 @@ async fn set_background_agent(
 ) -> CmdResult<reside_core::refresh::AgentStatus> {
     use reside_core::refresh::{agent, AgentConfig};
     let status = if enabled {
-        let cfg = AgentConfig::new(agent_exec_path()?, agent_sideloader_bin());
+        let cfg = AgentConfig::new(
+            agent_exec_path()?,
+            agent_sideloader_bin(),
+            agent_netmuxd_bin(),
+        );
         agent::install(&state.paths, &cfg)?
     } else {
         agent::uninstall(&state.paths)?
@@ -497,6 +516,14 @@ fn agent_exec_path() -> Result<std::path::PathBuf, AppError> {
 /// and let the agent fall back to `PATH` itself.
 fn agent_sideloader_bin() -> Option<std::path::PathBuf> {
     let bin = reside_core::signer::sideloader_binary();
+    bin.is_absolute().then_some(bin)
+}
+
+/// The netmuxd path to bake into the agent's environment, by the same rule as
+/// [`agent_sideloader_bin`]: only when absolute, so a unit's empty environment
+/// can reproduce it. A bare `netmuxd` on `PATH` is left for the agent to resolve.
+fn agent_netmuxd_bin() -> Option<std::path::PathBuf> {
+    let bin = reside_core::transport::muxer::netmuxd_binary();
     bin.is_absolute().then_some(bin)
 }
 
@@ -573,6 +600,13 @@ pub fn run() {
             agent_status,
             set_background_agent
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ReSide");
+        .build(tauri::generate_context!())
+        .expect("error while building ReSide")
+        .run(|_app_handle, event| {
+            // Tear down the on-demand Wi-Fi bridge so netmuxd never outlives the
+            // app (it's started lazily by Wi-Fi installs/refreshes).
+            if let tauri::RunEvent::Exit = event {
+                tauri::async_runtime::block_on(reside_core::transport::muxer::shutdown());
+            }
+        });
 }

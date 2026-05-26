@@ -13,6 +13,7 @@ pub mod error;
 pub mod installs;
 pub mod ipa_meta;
 pub mod ipa_store;
+pub mod locate;
 pub mod operation;
 pub mod paths;
 pub mod proc_lock;

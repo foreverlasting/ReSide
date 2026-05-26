@@ -84,12 +84,11 @@ pub fn clear_credentials(store: &SecureStore) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the Sideloader binary: `RESIDE_SIDELOADER_BIN` if set, else the
-/// `sideloader` on `PATH`.
+/// Resolve the Sideloader binary: `RESIDE_SIDELOADER_BIN` if set, else a
+/// `sideloader` shipped next to the running executable, else `sideloader` on
+/// `PATH`. See [`crate::locate`] for why the ordering matters to the agent.
 pub fn sideloader_binary() -> PathBuf {
-    std::env::var_os(ENV_SIDELOADER_BIN)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("sideloader"))
+    crate::locate::helper_binary(ENV_SIDELOADER_BIN, "sideloader")
 }
 
 /// Raw result of a finished Sideloader invocation. `output` is stdout and

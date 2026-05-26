@@ -54,13 +54,13 @@ fn supervised() -> &'static Mutex<Option<Child>> {
     CELL.get_or_init(|| Mutex::new(None))
 }
 
-/// Resolve the netmuxd binary: `RESIDE_NETMUXD_BIN` if set, else `netmuxd` on
-/// `PATH`. Mirrors how the signer locates the Sideloader binary. Public so the
-/// app can bake the resolved path into the background agent's unit environment.
+/// Resolve the netmuxd binary: `RESIDE_NETMUXD_BIN` if set, else a `netmuxd`
+/// shipped next to the running executable, else `netmuxd` on `PATH`. Mirrors how
+/// the signer locates the Sideloader binary (both go through [`crate::locate`]).
+/// Public so the app can bake the resolved path into the agent's unit
+/// environment.
 pub fn netmuxd_binary() -> PathBuf {
-    std::env::var_os(ENV_NETMUXD_BIN)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("netmuxd"))
+    crate::locate::helper_binary(ENV_NETMUXD_BIN, "netmuxd")
 }
 
 /// The Wi-Fi muxer address as an `idevice` target. `NETMUXD_TCP` is a constant we

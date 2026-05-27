@@ -8,6 +8,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Setup } from "./screens/Setup";
+import { Settings } from "./screens/Settings";
 import { Dashboard } from "./screens/Dashboard";
 import { ImportModal } from "./screens/ImportModal";
 import { RefreshModal } from "./screens/RefreshModal";
@@ -23,7 +24,7 @@ import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
 // On-demand surfaces layered over the always-present dashboard.
-type Overlay = "pairing" | "setup" | null;
+type Overlay = "pairing" | "setup" | "settings" | null;
 
 export function ReSideApp() {
   const [dark, setDark] = useState(false);
@@ -194,6 +195,20 @@ export function ReSideApp() {
             />
           }
         />
+      ) : overlay === "settings" ? (
+        <Settings
+          dark={dark}
+          onClose={closeOverlay}
+          toolbarExtra={toolbarExtra}
+          railExtra={
+            <DevicesRail
+              devices={deviceList}
+              error={devices.error}
+              selectedUdid={target?.udid}
+              onSelect={setSelectedUdid}
+            />
+          }
+        />
       ) : overlay === "pairing" ? (
         <Pairing
           dark={dark}
@@ -249,7 +264,7 @@ export function ReSideApp() {
             }}
             onNavigate={(id) => {
               if (id === "devices") setOverlay("pairing");
-              else if (id === "settings") setOverlay("setup");
+              else if (id === "settings") setOverlay("settings");
             }}
           />
           {importing && (
@@ -266,6 +281,10 @@ export function ReSideApp() {
                 // Reflect a fresh keyring sign-in so auto-refresh can be enabled.
                 credStatus.refetch();
               }}
+              onManageCerts={() => {
+                setImporting(false);
+                setOverlay("settings");
+              }}
             />
           )}
           {refreshTarget && (
@@ -273,6 +292,10 @@ export function ReSideApp() {
               app={refreshTarget}
               onClose={() => setRefreshTarget(null)}
               onRefreshed={() => apps.refetch()}
+              onManageCerts={() => {
+                setRefreshTarget(null);
+                setOverlay("settings");
+              }}
             />
           )}
         </>

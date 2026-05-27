@@ -36,6 +36,24 @@ on one node).
 **Done when:** a user at the 2-cert cap can revoke from the UI and immediately
 sign again; can switch Apple IDs without editing files. Validate on hardware.
 
+**Status (2026-05-26): built, four gates green, NOT yet hardware-validated.**
+- Core: `signer::{list_certs, revoke_cert}` drive the fork's `cert list|revoke`
+  (parsing its human output — no new fork patch); `parse_cert_list` is unit-tested.
+- New error `AppleCertLimitReached` (category + remediation), classified off Apple's
+  "already have a current … certificate" text (portal code 7460).
+- Tauri commands `list_certificates` / `revoke_certificate`; IPC `CertInfo`.
+- UI: `screens/Settings.tsx` (a new "settings" overlay; the sidebar/dashboard
+  "settings" nav now opens it, not Setup) with a Certificates list+revoke and an
+  Apple ID change/forget form. Plus the chosen **auto-prompt at the cap**: when an
+  install/refresh fails with `AppleCertLimitReached`, the modal shows a "Manage
+  certificates" button that jumps to Settings.
+- **Known gap:** if `cert list`/`revoke` triggers a fresh 2FA challenge, Settings
+  only shows the remediation text — there's no inline code entry (a trusted device
+  skips 2FA, so this is rare). Wire a 2FA prompt here if hardware shows it's needed.
+- **Validate on hardware:** with ≥1 cert on the account, open Settings → see the
+  list; revoke one → it disappears and a subsequent sign works; force the cap to
+  confirm the install-modal auto-prompt appears and lands on Settings.
+
 ## 2. Pre-public polish (cheap; do before strangers arrive)
 
 - **`mdns_sd` ERROR log noise** — a benign shutdown race logs at ERROR. Downgrade

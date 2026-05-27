@@ -290,6 +290,34 @@ async fn sign_out(state: tauri::State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+/// List the Apple account's development certificates (Settings → Certificates).
+/// Returns `AppleAuthCredentialsInvalid` if no Apple ID is stored yet, or the
+/// auth/2FA category if Apple challenges the login.
+#[tauri::command]
+async fn list_certificates(
+    state: tauri::State<'_, AppState>,
+) -> CmdResult<Vec<reside_core::signer::CertInfo>> {
+    let Some(creds) = state.resolve_credentials() else {
+        return Err(AppError::AppleAuthCredentialsInvalid.into());
+    };
+    Ok(reside_core::signer::list_certs(&creds).await?)
+}
+
+/// Revoke the certificate with `serial_number` (from [`list_certificates`]).
+/// This is the way out of `AppleCertLimitReached`: free Apple IDs cap at ~2
+/// certs, so revoking a stale one lets signing proceed again.
+#[tauri::command]
+async fn revoke_certificate(
+    state: tauri::State<'_, AppState>,
+    serial_number: String,
+) -> CmdResult<()> {
+    let Some(creds) = state.resolve_credentials() else {
+        return Err(AppError::AppleAuthCredentialsInvalid.into());
+    };
+    reside_core::signer::revoke_cert(&creds, &serial_number).await?;
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallOutcome {
@@ -698,6 +726,8 @@ pub fn run() {
             credential_status,
             set_apple_credentials,
             sign_out,
+            list_certificates,
+            revoke_certificate,
             install_ipa,
             list_apps,
             refresh_app,

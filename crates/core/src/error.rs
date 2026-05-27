@@ -34,6 +34,7 @@ pub enum ErrorCategory {
     AppleDevCertGenFailed,
     AppleDevDeviceRegLimitReached,
     AppleAppIdLimitReached,
+    AppleCertLimitReached,
     SigningCertExpired,
     EntitlementsUnsupported,
     BundleIdConflict,
@@ -69,6 +70,7 @@ impl ErrorCategory {
             Self::AppleDevCertGenFailed => "AppleDevCertGenFailed",
             Self::AppleDevDeviceRegLimitReached => "AppleDevDeviceRegLimitReached",
             Self::AppleAppIdLimitReached => "AppleAppIdLimitReached",
+            Self::AppleCertLimitReached => "AppleCertLimitReached",
             Self::SigningCertExpired => "SigningCertExpired",
             Self::EntitlementsUnsupported => "EntitlementsUnsupported",
             Self::BundleIdConflict => "BundleIdConflict",
@@ -141,6 +143,8 @@ pub enum AppError {
     AppleDevDeviceRegLimitReached,
     #[error("App ID limit reached for this week")]
     AppleAppIdLimitReached,
+    #[error("the account already has the maximum number of signing certificates")]
+    AppleCertLimitReached,
     #[error("the signing certificate has expired")]
     SigningCertExpired,
     #[error("one or more entitlements are unsupported and will be stripped")]
@@ -191,6 +195,7 @@ impl AppError {
             AppleDevCertGenFailed => ErrorCategory::AppleDevCertGenFailed,
             AppleDevDeviceRegLimitReached => ErrorCategory::AppleDevDeviceRegLimitReached,
             AppleAppIdLimitReached => ErrorCategory::AppleAppIdLimitReached,
+            AppleCertLimitReached => ErrorCategory::AppleCertLimitReached,
             SigningCertExpired => ErrorCategory::SigningCertExpired,
             EntitlementsUnsupported => ErrorCategory::EntitlementsUnsupported,
             BundleIdConflict => ErrorCategory::BundleIdConflict,
@@ -240,6 +245,9 @@ impl AppError {
             }
             AppleAppIdLimitReached => {
                 "You've created 10 App IDs this week. Reuse an existing bundle ID, or wait."
+            }
+            AppleCertLimitReached => {
+                "Apple allows only ~2 signing certificates per free account. Revoke an old one in Settings → Certificates, then try again."
             }
             SigningCertExpired => "Your signing certificate has expired — sign in again to renew.",
             EntitlementsUnsupported => "Some features may not work after signing.",

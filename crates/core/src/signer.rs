@@ -165,6 +165,12 @@ fn classify(outcome: &RawOutcome) -> Result<()> {
     if s.contains("invalid_host_id") || s.contains("not paired") {
         return Err(AppError::DeviceNotTrusted);
     }
+    // Free Apple IDs allow only ~2 active development certificates. When signing
+    // would need a new one past that cap, Apple's portal returns code 7460 with
+    // this text. The user has to revoke an old cert (Settings → Certificates).
+    if s.contains("already have a current") && s.contains("certificate") {
+        return Err(AppError::AppleCertLimitReached);
+    }
     // Free Apple-ID weekly quotas (10 App IDs / 10 device registrations).
     if s.contains("maximum app id") || s.contains("maximum number of app id") {
         return Err(AppError::AppleAppIdLimitReached);
@@ -317,6 +323,60 @@ pub async fn install(req: &InstallRequest<'_>) -> Result<()> {
     classify(&outcome)
 }
 
+/// One development certificate registered to the account, as reported by the
+/// fork's `cert list`. The `serial_number` is the handle [`revoke_cert`] takes.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertInfo {
+    pub name: String,
+    pub serial_number: String,
+    pub machine_name: String,
+}
+
+/// Parse the fork's human-readable `cert list` output into structured certs.
+///
+/// Pure (no process) so it is unit-tested against the fork's exact format. Each
+/// cert is one line shaped like:
+/// `` - `name` with the serial number `serial`, from the machine named `machine`.``
+/// We key off the three back-tick-quoted fields rather than the surrounding
+/// prose, so login banners and slf4d log lines mixed into the stream are ignored.
+fn parse_cert_list(output: &str) -> Vec<CertInfo> {
+    output
+        .lines()
+        .filter(|line| line.contains("serial number"))
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('`').skip(1).step_by(2).collect();
+            match fields.as_slice() {
+                [name, serial, machine] => Some(CertInfo {
+                    name: (*name).to_string(),
+                    serial_number: (*serial).to_string(),
+                    machine_name: (*machine).to_string(),
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// List the account's development certificates via the fork's `cert list`.
+///
+/// Talks only to Apple (not the device), so no muxer is involved. Surfacing this
+/// is what lets a user at Apple's ~2-cert cap see and [`revoke_cert`] an old one
+/// instead of hitting [`AppError::AppleCertLimitReached`] with no way forward.
+pub async fn list_certs(creds: &AppleCredentials) -> Result<Vec<CertInfo>> {
+    let outcome = run(creds, &["cert", "list"], &[], None).await?;
+    classify(&outcome)?;
+    Ok(parse_cert_list(&outcome.output))
+}
+
+/// Revoke the development certificate with the given serial number via the fork's
+/// `cert revoke`. The serial comes from [`CertInfo::serial_number`]. Apple-only,
+/// so no muxer. After this, the account is back under the cap and can sign again.
+pub async fn revoke_cert(creds: &AppleCredentials, serial_number: &str) -> Result<()> {
+    let outcome = run(creds, &["cert", "revoke", serial_number], &[], None).await?;
+    classify(&outcome)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,9 +487,54 @@ mod tests {
             Err(AppError::AppleAppIdLimitReached)
         ));
 
+        // Apple's portal text (code 7460) when the free-account cert cap is hit.
+        assert!(matches!(
+            classify(&on_stdout(
+                1,
+                "You already have a current iOS Development certificate or a pending certificate request."
+            )),
+            Err(AppError::AppleCertLimitReached)
+        ));
+
         assert!(matches!(
             classify(&on_stdout(1, "some other failure")),
             Err(AppError::Internal(_))
         ));
+    }
+
+    #[test]
+    fn parse_cert_list_extracts_each_cert_and_ignores_noise() {
+        // Real shape of the fork's `cert list` stdout, with a leading login
+        // banner and a trailing slf4d log line that must NOT parse as a cert.
+        let output = "\
+Signing in...
+You have 2 certificates registered.
+Currently registered certificates:
+ - `iOS Development` with the serial number `1A2B3C`, from the machine named `eric-laptop`.
+ - `iOS Development` with the serial number `4D5E6F`, from the machine named `eric-desktop`.
+INFO some unrelated log mentioning a serial number in prose
+";
+        let certs = parse_cert_list(output);
+        assert_eq!(
+            certs,
+            vec![
+                CertInfo {
+                    name: "iOS Development".into(),
+                    serial_number: "1A2B3C".into(),
+                    machine_name: "eric-laptop".into(),
+                },
+                CertInfo {
+                    name: "iOS Development".into(),
+                    serial_number: "4D5E6F".into(),
+                    machine_name: "eric-desktop".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_cert_list_handles_empty_account() {
+        let output = "You have 0 certificates registered.\nCurrently registered certificates:\n";
+        assert!(parse_cert_list(output).is_empty());
     }
 }

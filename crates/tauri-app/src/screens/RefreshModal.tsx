@@ -33,10 +33,13 @@ export function RefreshModal({
   app,
   onClose,
   onRefreshed,
+  onManageCerts,
 }: {
   app: InstalledApp;
   onClose: () => void;
   onRefreshed: () => void;
+  /** Open Settings → Certificates — offered when a refresh hits Apple's cert cap. */
+  onManageCerts?: () => void;
 }) {
   const [opId] = useState(() => `refresh-${app.installationId}-${Date.now()}`);
   const op = useOperation(opId);
@@ -109,6 +112,17 @@ export function RefreshModal({
                   {error.category}
                 </Badge>
                 <div>{error.remediation}</div>
+                {error.category === "AppleCertLimitReached" && onManageCerts && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    iconLeft="shieldCheck"
+                    className="mt-2"
+                    onClick={onManageCerts}
+                  >
+                    Manage certificates
+                  </Button>
+                )}
               </div>
             </div>
           )}

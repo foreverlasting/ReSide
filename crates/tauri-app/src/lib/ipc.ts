@@ -176,6 +176,15 @@ export interface AgentStatus {
   detail: string;
 }
 
+/** One development certificate on the Apple account (mirrors Rust `CertInfo`).
+ *  Free Apple IDs cap at ~2; `serialNumber` is the handle `revokeCertificate`
+ *  takes. */
+export interface CertInfo {
+  name: string;
+  serialNumber: string;
+  machineName: string;
+}
+
 export const api = {
   runSetupCheck: () => invoke<SetupReport>("run_setup_check"),
   getTunnelStatus: () => invoke<TunnelPill>("get_tunnel_status"),
@@ -203,4 +212,8 @@ export const api = {
   agentStatus: () => invoke<AgentStatus>("agent_status"),
   setBackgroundAgent: (enabled: boolean) =>
     invoke<AgentStatus>("set_background_agent", { enabled }),
+  // Certificate management (Settings → Certificates).
+  listCertificates: () => invoke<CertInfo[]>("list_certificates"),
+  revokeCertificate: (serialNumber: string) =>
+    invoke<void>("revoke_certificate", { serialNumber }),
 };

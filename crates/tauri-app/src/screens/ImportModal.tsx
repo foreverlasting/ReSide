@@ -35,10 +35,13 @@ export function ImportModal({
   device,
   onClose,
   onInstalled,
+  onManageCerts,
 }: {
   device: DeviceInfo | null;
   onClose: () => void;
   onInstalled: () => void;
+  /** Open Settings → Certificates — offered when signing hits Apple's cert cap. */
+  onManageCerts?: () => void;
 }) {
   const [opId] = useState(() => `install-${Date.now()}`);
   const [path, setPath] = useState<string | null>(null);
@@ -253,6 +256,17 @@ export function ImportModal({
                   {error!.category}
                 </Badge>
                 <div>{error!.remediation}</div>
+                {error!.category === "AppleCertLimitReached" && onManageCerts && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    iconLeft="shieldCheck"
+                    className="mt-2"
+                    onClick={onManageCerts}
+                  >
+                    Manage certificates
+                  </Button>
+                )}
               </div>
             </div>
           )}

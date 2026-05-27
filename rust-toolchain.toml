@@ -1,0 +1,9 @@
+# Pin one Rust toolchain for every environment (local + both CI distros).
+# Distro rust packages disagree: Arch's `rust` bundles rustfmt/clippy and tracks
+# a newer release; Fedora's `rust`/`cargo` ship neither component and lag behind.
+# That drift is what made `cargo fmt`/`cargo clippy` pass on Arch and fail on
+# Fedora. rustup reads this file and installs the same toolchain everywhere.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

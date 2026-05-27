@@ -23,19 +23,37 @@ jobs:
         if: matrix.distro == 'arch'
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel rust nodejs pnpm \
+          pacman -S --noconfirm base-devel nodejs npm curl \
             webkit2gtk-4.1 libsoup3 usbmuxd libimobiledevice libnotify \
             openssl git
 
       - name: Install system deps (Fedora)
         if: matrix.distro == 'fedora'
         run: |
-          dnf install -y gcc gcc-c++ make rust cargo nodejs \
+          dnf install -y gcc gcc-c++ make nodejs npm curl \
             webkit2gtk4.1-devel libsoup3-devel usbmuxd libimobiledevice \
             libnotify openssl-devel git
-          npm install -g pnpm
+
+      # Pin pnpm to one version on every distro. Distro packages (pacman) and
+      # `npm install -g pnpm` (latest) drift apart, and pnpm 10 vs 11 disagree on
+      # where build-script approvals live — that drift is what broke the Fedora job.
+      - name: Setup pnpm (pinned)
+        run: |
+          npm install -g pnpm@10.33.4
+          pnpm --version
 
       - uses: actions/checkout@v4
+
+      # Install Rust via rustup so every distro gets the exact toolchain pinned in
+      # rust-toolchain.toml (channel + rustfmt + clippy), instead of whatever the
+      # distro packages happen to ship. Must run after checkout so rustup can read
+      # the toolchain file. `rustup show` materializes the toolchain + components.
+      - name: Setup Rust (pinned)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --no-modify-path --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" show
 
       - name: Frontend build
         working-directory: crates/tauri-app

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ReSide
+GenericName=iOS App Sideloader
+Comment=Sign, sideload, and auto-refresh iOS apps on your own iPhone or iPad
+Exec=__EXEC__
+Icon=reside
+Terminal=false
+Categories=Utility;
+Keywords=ios;iphone;ipad;sideload;sign;ipa;
+StartupWMClass=ReSide

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+  <defs>
+    <linearGradient id="hex-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3548"></stop>
+      <stop offset="1" stop-color="#221f2c"></stop>
+    </linearGradient>
+    <mask id="slot" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"></rect>
+      <rect x="316" y="516" width="614" height="100" fill="#000"></rect>
+    </mask>
+  </defs>
+  <path d="M 512 64 L 932 296 L 932 760 L 512 992 L 92 760 L 92 296 Z" fill="url(#hex-bg)" stroke="rgba(255,255,255,0.06)" stroke-width="2"></path>
+  <g mask="url(#slot)">
+    <text x="512" y="798" font-family="Geist, system-ui, sans-serif" font-weight="800" font-size="720" fill="#ffffff" text-anchor="middle" letter-spacing="-28">R</text>
+  </g>
+  <rect x="446" y="516" width="484" height="100" fill="#bd93f9"></rect>
+  <path d="M 316 566 L 446 388 L 446 744 Z" fill="#bd93f9"></path>
+</svg>

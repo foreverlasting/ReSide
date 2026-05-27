@@ -19,9 +19,42 @@ pub struct AppState {
     paths: Paths,
     db: SqlitePool,
     store: SecureStore,
+    /// In-memory Apple credentials for this app session only — the "remember for
+    /// this session" / "ask each time" tiers. Never written to disk; cleared on
+    /// sign-out and when the process exits. `None` means fall back to the keyring.
+    session_creds: std::sync::Mutex<Option<reside_core::signer::AppleCredentials>>,
     ops: OperationChannel,
     tunnels: TunnelManager,
     ipa_store: IpaStore,
+}
+
+impl AppState {
+    /// Resolve the credentials to use for an operation: the in-memory session
+    /// credentials if present (most recent, intentional), else the stored keyring
+    /// account. Clones out under the lock so nothing is held across an `.await`.
+    fn resolve_credentials(&self) -> Option<reside_core::signer::AppleCredentials> {
+        if let Some(c) = self
+            .session_creds
+            .lock()
+            .expect("session creds mutex")
+            .clone()
+        {
+            return Some(c);
+        }
+        reside_core::signer::load_credentials(&self.store)
+            .ok()
+            .flatten()
+    }
+
+    /// Just the in-memory session credentials (no keyring fallback), for passing
+    /// as the refresh engine's override — `None` lets the engine load the keyring
+    /// itself. Keeps "override == session only" semantics out of the engine.
+    fn resolve_session_only(&self) -> Option<reside_core::signer::AppleCredentials> {
+        self.session_creds
+            .lock()
+            .expect("session creds mutex")
+            .clone()
+    }
 }
 
 /// UI-safe error returned across the IPC boundary: category key + remediation,
@@ -178,29 +211,82 @@ async fn pick_ipa(app: tauri::AppHandle) -> CmdResult<Option<String>> {
 /// Whether an Apple ID is stored (i.e. the user has "signed in" to ReSide).
 #[tauri::command]
 async fn is_signed_in(state: tauri::State<'_, AppState>) -> CmdResult<bool> {
-    Ok(reside_core::signer::load_credentials(&state.store)?.is_some())
+    Ok(state.resolve_credentials().is_some())
 }
 
-/// Store (or replace) the Apple ID credentials in the secret store. The actual
-/// authentication happens during install, so this just persists them.
+/// How the user wants their Apple credentials remembered. `Keyring` persists to
+/// the system keyring (survives restart, lets the background agent auto-refresh);
+/// `Session` keeps them in memory for this app run only (nothing on disk). The
+/// "ask every time" tier is `Session` plus the UI signing out after each op.
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+enum RememberMode {
+    #[default]
+    Keyring,
+    Session,
+}
+
+/// Credential state for the UI: where (if anywhere) creds are held, and whether
+/// the keyring is even available (so the UI can disable the "remember" option).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialStatus {
+    /// "keyring" | "session" | "none".
+    mode: &'static str,
+    keyring_available: bool,
+}
+
+#[tauri::command]
+async fn credential_status(state: tauri::State<'_, AppState>) -> CmdResult<CredentialStatus> {
+    let keyring_available = matches!(state.store, SecureStore::Keyring);
+    let mode = if reside_core::signer::load_credentials(&state.store)?.is_some() {
+        "keyring"
+    } else if state
+        .session_creds
+        .lock()
+        .expect("session creds mutex")
+        .is_some()
+    {
+        "session"
+    } else {
+        "none"
+    };
+    Ok(CredentialStatus {
+        mode,
+        keyring_available,
+    })
+}
+
+/// Store the Apple ID credentials per the chosen [`RememberMode`]. Authentication
+/// itself happens during install/refresh, so this just stashes them. `Keyring`
+/// errors with `KeyringUnavailable` when no keyring is present — the UI offers
+/// that option only when one is.
 #[tauri::command]
 async fn set_apple_credentials(
     state: tauri::State<'_, AppState>,
     apple_id: String,
     password: String,
+    remember: Option<RememberMode>,
 ) -> CmdResult<()> {
     let creds = reside_core::signer::AppleCredentials {
         apple_id,
         password: reside_core::Secret::new(password),
     };
-    reside_core::signer::store_credentials(&state.store, &creds)?;
+    match remember.unwrap_or_default() {
+        RememberMode::Keyring => reside_core::signer::store_credentials(&state.store, &creds)?,
+        RememberMode::Session => {
+            *state.session_creds.lock().expect("session creds mutex") = Some(creds);
+        }
+    }
     Ok(())
 }
 
-/// Forget the stored Apple ID credentials.
+/// Forget the Apple ID credentials — both the persisted keyring copy and any
+/// in-memory session copy.
 #[tauri::command]
 async fn sign_out(state: tauri::State<'_, AppState>) -> CmdResult<()> {
     reside_core::signer::clear_credentials(&state.store)?;
+    *state.session_creds.lock().expect("session creds mutex") = None;
     Ok(())
 }
 
@@ -232,7 +318,7 @@ async fn install_ipa(
     let op = state.ops.start(operation_id);
 
     let run = async {
-        let Some(creds) = signer::load_credentials(&state.store)? else {
+        let Some(creds) = state.resolve_credentials() else {
             return Err(AppError::AppleAuthCredentialsInvalid);
         };
 
@@ -254,11 +340,21 @@ async fn install_ipa(
             ""
         };
 
-        op.stage(
-            OperationStage::Signing,
-            0.3,
-            Some(format!("Signing {}{via}…", meta.display_name)),
-        );
+        // On a brand-new install the fork downloads a one-time ~150 MB Apple
+        // component before it can sign (see signer::adi_libs_present). That
+        // happens inside the blocking `install` call below, so fold the heads-up
+        // into the stage message that stays on screen for its whole duration —
+        // otherwise the first sign-in looks hung.
+        let signing_msg = if signer::adi_libs_present() {
+            format!("Signing {}{via}…", meta.display_name)
+        } else {
+            format!(
+                "First sign-in: downloading a one-time component from Apple \
+                 (~150 MB) and signing {}{via}… This happens only once.",
+                meta.display_name
+            )
+        };
+        op.stage(OperationStage::Signing, 0.3, Some(signing_msg));
         let req = InstallRequest {
             creds: &creds,
             ipa_path: &stored.path,
@@ -404,6 +500,8 @@ async fn refresh_app(
     installation_id: i64,
 ) -> CmdResult<RefreshAppOutcome> {
     let op = state.ops.start(operation_id);
+    // Use session credentials if the user chose not to persist; else the keyring.
+    let session = state.resolve_session_only();
     // refresh_installation emits the terminal Done/Failed event itself.
     let new_expiration_ts = reside_core::refresh::refresh_installation(
         &state.db,
@@ -411,6 +509,7 @@ async fn refresh_app(
         Some(&op),
         installation_id,
         unix_now(),
+        session.as_ref(),
     )
     .await?;
     Ok(RefreshAppOutcome {
@@ -428,12 +527,14 @@ async fn refresh_due_now(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> CmdResult<reside_core::refresh::RefreshSummary> {
+    let session = state.resolve_session_only();
     let summary = reside_core::refresh::refresh_due(
         &state.db,
         &state.store,
         &state.paths.agent_pid_file(),
         unix_now(),
         reside_core::refresh::REFRESH_LEAD_SECS,
+        session.as_ref(),
     )
     .await?;
 
@@ -545,9 +646,11 @@ pub fn run() {
             let paths = Paths::resolve()?;
             paths.ensure_dirs()?;
 
-            let (store, keyring_warning) = SecureStore::detect(paths.data_dir().join("secrets"));
+            let (store, keyring_warning) = SecureStore::detect();
             if keyring_warning.is_some() {
-                tracing::warn!("no system keyring detected — using filesystem fallback");
+                tracing::warn!(
+                    "no system keyring detected — credential storage disabled until one is installed"
+                );
             }
 
             let db = tauri::async_runtime::block_on(reside_core::db::open(paths.database_file()))?;
@@ -573,6 +676,7 @@ pub fn run() {
                 paths,
                 db,
                 store,
+                session_creds: std::sync::Mutex::new(None),
                 ops,
                 tunnels: TunnelManager::new(),
                 ipa_store,
@@ -591,6 +695,7 @@ pub fn run() {
             get_activity_log,
             pick_ipa,
             is_signed_in,
+            credential_status,
             set_apple_credentials,
             sign_out,
             install_ipa,

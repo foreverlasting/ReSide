@@ -91,6 +91,41 @@ pub fn sideloader_binary() -> PathBuf {
     crate::locate::helper_binary(ENV_SIDELOADER_BIN, "sideloader")
 }
 
+/// The fork's two one-time Apple ADI libraries, downloaded on first run into
+/// `<config>/lib/` (see [`adi_libs_present`]).
+const ADI_LIB_NAMES: [&str; 2] = ["libCoreADI.so", "libstoreservicescore.so"];
+
+/// Where the forked Sideloader keeps its config (the device identity and the
+/// downloaded ADI libs). Mirrors the fork's own `defaultConfigurationPath()` so
+/// our detection agrees with where the fork actually reads/writes: an explicit
+/// `SIDELOADER_CONFIG_DIR`, else `$XDG_CONFIG_DIR`-or-`~/.config` plus
+/// `Sideloader`. Detection only — we never relocate it (a user's existing GTK
+/// Sideloader data lives here), so this stays in lockstep without touching the
+/// proven signing path.
+fn sideloader_config_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("SIDELOADER_CONFIG_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    // The fork reads `XDG_CONFIG_DIR` (sic) before falling back to `~/.config`.
+    let base = std::env::var_os("XDG_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))?;
+    Some(base.join("Sideloader"))
+}
+
+/// Whether the fork's one-time Apple ADI libraries are already present. When this
+/// is `false`, the next signer run downloads ~150 MB from Apple's CDN first (the
+/// fork's `downloadAndInstallDeps`) — a one-time wait the UI warns the user about
+/// so the first sign-in doesn't look hung. A `None` config dir (no home, no XDG)
+/// is treated as "not present" so we warn rather than stay silent.
+pub fn adi_libs_present() -> bool {
+    let Some(dir) = sideloader_config_dir() else {
+        return false;
+    };
+    let lib = dir.join("lib");
+    ADI_LIB_NAMES.iter().all(|name| lib.join(name).is_file())
+}
+
 /// Raw result of a finished Sideloader invocation. `output` is stdout and
 /// stderr concatenated: Sideloader logs through slf4d, which writes to stdout,
 /// so we must inspect both streams to classify a failure.
@@ -315,6 +350,26 @@ mod tests {
         assert_eq!(sideloader_binary(), PathBuf::from("/opt/custom/sideloader"));
         std::env::remove_var(ENV_SIDELOADER_BIN);
         assert_eq!(sideloader_binary(), PathBuf::from("sideloader"));
+    }
+
+    #[test]
+    fn adi_libs_detected_only_when_both_present_in_config_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Point detection at our temp config dir, the way ReSide hands the fork
+        // an explicit SIDELOADER_CONFIG_DIR.
+        std::env::set_var("SIDELOADER_CONFIG_DIR", tmp.path());
+
+        let lib = tmp.path().join("lib");
+        std::fs::create_dir_all(&lib).unwrap();
+        assert!(!adi_libs_present(), "no libs yet → must report missing");
+
+        std::fs::write(lib.join("libCoreADI.so"), b"x").unwrap();
+        assert!(!adi_libs_present(), "one of two libs is not enough");
+
+        std::fs::write(lib.join("libstoreservicescore.so"), b"x").unwrap();
+        assert!(adi_libs_present(), "both libs present → detected");
+
+        std::env::remove_var("SIDELOADER_CONFIG_DIR");
     }
 
     /// Build an outcome whose recognizable text lands on *stdout* — where

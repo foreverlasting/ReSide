@@ -1,0 +1,174 @@
+/* hifi/catppuccin-latte.css
+ * Light-mode override: remap Tailwind's slate utilities to the
+ * Catppuccin Latte palette. The official light variant of Catppuccin
+ * by the Catppuccin org — pairs naturally with Dracula via the shared
+ * purple accent (mauve / Dracula purple).
+ *
+ * Strategy mirrors dracula.css:
+ *  - dark: prefixed utilities are untouched here (handled in dracula.css)
+ *  - non-prefixed utilities are scoped to [data-theme="light"] and remapped.
+ *    No !important needed — the scope adds specificity that wins against
+ *    Tailwind CDN's runtime-injected base utility.
+ *
+ * Catppuccin Latte palette:
+ *   base     #eff1f5   mantle    #e6e9ef   crust    #dce0e8
+ *   surface0 #ccd0da   surface1  #bcc0cc   surface2 #acb0be
+ *   overlay0 #9ca0b0   overlay1  #8c8fa1   overlay2 #7c7f93
+ *   subtext0 #6c6f85   subtext1  #5c5f77   text     #4c4f69
+ *   rosewater #dc8a78  flamingo  #dd7878   pink     #ea76cb
+ *   mauve    #8839ef   red       #d20f39   maroon   #e64553
+ *   peach    #fe640b   yellow    #df8e1d   green    #40a02b
+ *   teal     #179299   sky       #04a5e5   sapphire #209fb5
+ *   blue     #1e66f5   lavender  #7287fd
+ */
+
+[data-theme="light"] {
+  --ctp-base: #eff1f5;
+  --ctp-mantle: #e6e9ef;
+  --ctp-crust: #dce0e8;
+  --ctp-surface0: #ccd0da;
+  --ctp-surface1: #bcc0cc;
+  --ctp-surface2: #acb0be;
+  --ctp-overlay1: #8c8fa1;
+  --ctp-overlay0: #9ca0b0;
+  --ctp-subtext0: #6c6f85;
+  --ctp-subtext1: #5c5f77;
+  --ctp-text: #4c4f69;
+  --ctp-mauve: #8839ef;
+  --ctp-mauve-hover: #7a2cd9;
+  --ctp-pink: #ea76cb;
+  --ctp-red: #d20f39;
+  --ctp-peach: #fe640b;
+  --ctp-yellow: #df8e1d;
+  --ctp-green: #40a02b;
+  --ctp-teal: #179299;
+  --ctp-sky: #04a5e5;
+  --ctp-sapphire: #209fb5;
+  --ctp-blue: #1e66f5;
+  --ctp-lavender: #7287fd;
+  color-scheme: light;
+}
+
+/* ============================================================
+ * SURFACES
+ * ============================================================ */
+[data-theme="light"] .bg-white { background-color: #ffffff; }
+
+[data-theme="light"] .bg-slate-50       { background-color: var(--ctp-base); }
+[data-theme="light"] .bg-slate-50\/80   { background-color: rgba(239, 241, 245, 0.85); }
+[data-theme="light"] .bg-slate-50\/60   { background-color: rgba(239, 241, 245, 0.65); }
+[data-theme="light"] .bg-slate-50\/40   { background-color: rgba(239, 241, 245, 0.45); }
+[data-theme="light"] .bg-slate-100      { background-color: var(--ctp-mantle); }
+[data-theme="light"] .bg-slate-200      { background-color: var(--ctp-crust); }
+[data-theme="light"] .bg-slate-200\/70  { background-color: rgba(220, 224, 232, 0.7); }
+
+/* Window-header gradient */
+[data-theme="light"] .from-slate-50 {
+  --tw-gradient-from: var(--ctp-base) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(239 241 245 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+[data-theme="light"] .to-slate-100 { --tw-gradient-to: var(--ctp-mantle) var(--tw-gradient-to-position); }
+[data-theme="light"] .to-white     { --tw-gradient-to: #ffffff var(--tw-gradient-to-position); }
+
+/* Primary surface — solid buttons, step indicator current, switch on,
+   mini logo. Catppuccin's signature mauve. */
+[data-theme="light"] .bg-slate-900 { background-color: var(--ctp-mauve); }
+[data-theme="light"] .hover\:bg-slate-800:hover { background-color: var(--ctp-mauve-hover); }
+[data-theme="light"] .active\:bg-slate-950:active { background-color: #6824c0; }
+[data-theme="light"] .border-slate-900 { border-color: var(--ctp-mauve); }
+
+/* Borders */
+[data-theme="light"] .border-slate-200      { border-color: var(--ctp-crust); }
+[data-theme="light"] .border-slate-200\/70  { border-color: rgba(220, 224, 232, 0.7); }
+[data-theme="light"] .border-slate-300      { border-color: var(--ctp-surface1); }
+[data-theme="light"] .border-slate-300\/70  { border-color: rgba(188, 192, 204, 0.7); }
+[data-theme="light"] .hover\:border-slate-300:hover { border-color: var(--ctp-surface1); }
+[data-theme="light"] .border-slate-100      { border-color: var(--ctp-mantle); }
+
+/* Window-control dots */
+[data-theme="light"] .bg-slate-300 { background-color: var(--ctp-surface1); }
+[data-theme="light"] .hover\:bg-slate-400:hover { background-color: var(--ctp-surface2); }
+[data-theme="light"] .hover\:bg-red-500:hover { background-color: var(--ctp-red); }
+
+/* ============================================================
+ * TYPOGRAPHY
+ * ============================================================ */
+[data-theme="light"] .text-slate-900 { color: var(--ctp-text); }
+[data-theme="light"] .text-slate-800 { color: var(--ctp-text); }
+[data-theme="light"] .text-slate-700 { color: var(--ctp-subtext1); }
+[data-theme="light"] .text-slate-600 { color: var(--ctp-subtext0); }
+[data-theme="light"] .text-slate-500 { color: var(--ctp-subtext0); }
+[data-theme="light"] .text-slate-400 { color: var(--ctp-overlay1); }
+[data-theme="light"] .text-slate-50  { color: #ffffff; }
+
+[data-theme="light"] .hover\:text-slate-700:hover { color: var(--ctp-subtext1); }
+[data-theme="light"] .hover\:text-slate-800:hover { color: var(--ctp-text); }
+[data-theme="light"] .hover\:text-slate-900:hover { color: var(--ctp-text); }
+[data-theme="light"] .hover\:text-slate-200:hover { color: var(--ctp-base); }
+[data-theme="light"] .placeholder\:text-slate-400::placeholder { color: var(--ctp-overlay1); }
+
+/* Focus rings */
+[data-theme="light"] .focus-visible\:ring-slate-900:focus-visible { --tw-ring-color: var(--ctp-mauve); }
+[data-theme="light"] .focus\:ring-slate-900\/20:focus { --tw-ring-color: rgba(136, 57, 239, 0.25); }
+[data-theme="light"] .focus\:border-slate-400:focus { border-color: var(--ctp-mauve); }
+
+/* ============================================================
+ * ACCENT STATUS COLORS — retuned to Catppuccin equivalents
+ * (Tailwind emerald → Catppuccin green, amber → peach, red → red, sky → sky)
+ * ============================================================ */
+
+/* Solid fills (status dots, progress, step "done") */
+[data-theme="light"] .bg-emerald-500 { background-color: var(--ctp-green); }
+[data-theme="light"] .bg-emerald-400 { background-color: var(--ctp-green); }
+[data-theme="light"] .bg-sky-500     { background-color: var(--ctp-sapphire); }
+[data-theme="light"] .bg-sky-400     { background-color: var(--ctp-sky); }
+[data-theme="light"] .bg-amber-500   { background-color: var(--ctp-peach); }
+[data-theme="light"] .bg-red-500     { background-color: var(--ctp-red); }
+[data-theme="light"] .bg-red-600     { background-color: #b30c30; }
+[data-theme="light"] .hover\:bg-red-700:hover { background-color: #9c0a2a; }
+
+/* Text */
+[data-theme="light"] .text-emerald-700 { color: var(--ctp-green); }
+[data-theme="light"] .text-emerald-600 { color: var(--ctp-green); }
+[data-theme="light"] .text-emerald-500 { color: var(--ctp-green); }
+[data-theme="light"] .text-emerald-400 { color: var(--ctp-green); }
+
+[data-theme="light"] .text-sky-700     { color: var(--ctp-sapphire); }
+[data-theme="light"] .text-sky-600     { color: var(--ctp-sapphire); }
+[data-theme="light"] .text-sky-400     { color: var(--ctp-sky); }
+
+[data-theme="light"] .text-amber-900   { color: #a05208; }
+[data-theme="light"] .text-amber-800   { color: #c95808; }
+[data-theme="light"] .text-amber-700   { color: var(--ctp-peach); }
+[data-theme="light"] .text-amber-600   { color: var(--ctp-peach); }
+
+[data-theme="light"] .text-red-700     { color: var(--ctp-red); }
+[data-theme="light"] .text-red-600     { color: var(--ctp-red); }
+[data-theme="light"] .text-red-900     { color: #a90c2e; }
+
+[data-theme="light"] .text-violet-400  { color: var(--ctp-mauve); }
+
+/* Soft tinted backgrounds (badges, icon circles, inline message blocks) */
+[data-theme="light"] .bg-emerald-50 { background-color: rgba(64, 160, 43, 0.10); }
+[data-theme="light"] .bg-amber-50   { background-color: rgba(254, 100, 11, 0.10); }
+[data-theme="light"] .bg-red-50     { background-color: rgba(210, 15, 57, 0.10); }
+[data-theme="light"] .bg-sky-50     { background-color: rgba(32, 159, 181, 0.10); }
+[data-theme="light"] .bg-amber-100  { background-color: rgba(254, 100, 11, 0.16); }
+[data-theme="light"] .bg-red-100    { background-color: rgba(210, 15, 57, 0.14); }
+[data-theme="light"] .bg-emerald-100 { background-color: rgba(64, 160, 43, 0.16); }
+
+/* Soft tint borders */
+[data-theme="light"] .border-emerald-200 { border-color: rgba(64, 160, 43, 0.30); }
+[data-theme="light"] .border-amber-200   { border-color: rgba(254, 100, 11, 0.30); }
+[data-theme="light"] .border-amber-300   { border-color: rgba(254, 100, 11, 0.45); }
+[data-theme="light"] .border-red-200     { border-color: rgba(210, 15, 57, 0.30); }
+[data-theme="light"] .border-red-300     { border-color: rgba(210, 15, 57, 0.45); }
+[data-theme="light"] .border-sky-200     { border-color: rgba(32, 159, 181, 0.30); }
+
+/* 2FA input focus ring */
+[data-theme="light"] .focus\:ring-amber-400:focus { --tw-ring-color: rgba(254, 100, 11, 0.45); }
+
+/* Ring offset */
+[data-theme="light"] .ring-white { --tw-ring-color: #ffffff; }
+[data-theme="light"] .focus-visible\:ring-offset-white:focus-visible { --tw-ring-offset-color: #ffffff; }

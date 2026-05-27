@@ -220,7 +220,7 @@ impl AppError {
             }
             UsbmuxdDown => "Run: sudo systemctl start usbmuxd",
             PermissionsMissing => "Add your user to the plugdev group / install udev rules.",
-            KeyringUnavailable => "No system keyring detected. ReSide will use an encrypted filesystem fallback.",
+            KeyringUnavailable => "No system keyring detected. Install one (e.g. gnome-keyring or KWallet) to sign in — ReSide will not store your Apple password without it.",
             AnisetteGenFailed => "Local anisette generation failed — see logs.",
             AnisetteAdiUnavailable => {
                 "One-time setup needed: ReSide must download Apple's signing libraries. Start setup."

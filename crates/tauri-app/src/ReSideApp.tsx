@@ -1,7 +1,9 @@
-// The live application shell (runs inside Tauri). It owns a small screen state
-// machine (Setup → Pairing) and the device-pairing mutation. Live status
-// (backend/tunnel + theme toggle) is injected into the window titlebar and
-// detected devices into the sidebar rail — no floating overlays on content.
+// The live application shell (runs inside Tauri). The app ALWAYS opens to the
+// Dashboard — there is no gated Setup→Pairing wizard. First-time guidance lives
+// in the dashboard's inline "Get Started" panel (driven by `getStarted`); the
+// Setup ("System") and Pairing screens are pushed as on-demand overlays from
+// that panel, the sidebar, or Settings. Live status (backend/tunnel + theme
+// toggle) is injected into the titlebar; detected devices into the sidebar.
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -20,11 +22,13 @@ import { api, asCommandError, isTauri, type DeviceInfo, type InstalledApp } from
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
-type Screen = "setup" | "pairing" | "dashboard";
+// On-demand surfaces layered over the always-present dashboard.
+type Overlay = "pairing" | "setup" | null;
 
 export function ReSideApp() {
   const [dark, setDark] = useState(false);
-  const [screen, setScreen] = useState<Screen>("setup");
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [systemCheckExpanded, setSystemCheckExpanded] = useState(false);
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [refreshTarget, setRefreshTarget] = useState<InstalledApp | null>(null);
@@ -41,6 +45,15 @@ export function ReSideApp() {
   // Installed apps for the live Dashboard grid.
   const apps = useQuery({ queryKey: ["apps"], queryFn: api.listApps, enabled: isTauri() });
 
+  // Where Apple credentials are held. Auto-refresh needs them persisted (keyring),
+  // since the unattended agent has no UI to prompt; session-only creds can't.
+  const credStatus = useQuery({
+    queryKey: ["cred-status"],
+    queryFn: api.credentialStatus,
+    enabled: isTauri(),
+  });
+  const canEnableAgent = credStatus.data?.mode === "keyring";
+
   const deviceList = useMemo(() => devices.data ?? [], [devices.data]);
   // The device we'll pair: the explicitly-selected one, else the first seen.
   const target = useMemo(
@@ -53,8 +66,7 @@ export function ReSideApp() {
     onSuccess: () => devices.refetch(),
   });
 
-  // "Refresh all due" — the same due-check the background agent will run on a
-  // timer. Refetch the grid afterward so reset clocks show immediately.
+  // "Refresh all due" — the same due-check the background agent runs on a timer.
   const refreshAll = useMutation({
     mutationFn: () => api.refreshDueNow(),
     onSettled: () => apps.refetch(),
@@ -132,6 +144,10 @@ export function ReSideApp() {
       ? "Connecting…"
       : "Backend OK";
 
+  // System dependencies are "ready" once the check has returned with no
+  // warnings. Drives the Get Started panel's first step + onboarding stage.
+  const systemReady = !!setup.data && setup.data.warn === 0;
+
   const toolbarExtra = (
     <div className="flex items-center gap-1.5">
       <StatusPill tone={backendTone} label={backendText} />
@@ -149,18 +165,25 @@ export function ReSideApp() {
     </div>
   );
 
+  const closeOverlay = () => {
+    pair.reset();
+    tunnelEstablish.reset();
+    wifiCheck.reset();
+    setOverlay(null);
+  };
+
   return (
     <div
       className="h-screen w-screen overflow-hidden"
-      style={{ background: dark ? "#0b1220" : "#f0eee9" }}
+      style={{ background: dark ? "#21222c" : "#dce0e8" }}
     >
-      {screen === "setup" ? (
+      {overlay === "setup" ? (
         <Setup
           dark={dark}
           report={setup.data}
           rerunning={setup.isFetching}
           onRerun={() => setup.refetch()}
-          onContinue={() => setScreen("pairing")}
+          onContinue={closeOverlay}
           toolbarExtra={toolbarExtra}
           railExtra={
             <DevicesRail
@@ -171,7 +194,7 @@ export function ReSideApp() {
             />
           }
         />
-      ) : screen === "pairing" ? (
+      ) : overlay === "pairing" ? (
         <Pairing
           dark={dark}
           device={target}
@@ -188,14 +211,9 @@ export function ReSideApp() {
           onCheckWifi={() => wifiCheck.mutate()}
           onPair={() => target && pair.mutate(target.udid)}
           onRecheckDevMode={() => devMode.refetch()}
-          onSkip={() => setScreen("dashboard")}
-          onContinue={() => setScreen("dashboard")}
-          onBack={() => {
-            pair.reset();
-            tunnelEstablish.reset();
-            wifiCheck.reset();
-            setScreen("setup");
-          }}
+          onSkip={closeOverlay}
+          onContinue={closeOverlay}
+          onBack={closeOverlay}
         />
       ) : (
         <>
@@ -214,19 +232,39 @@ export function ReSideApp() {
             agentBusy={setAgent.isPending}
             agentError={setAgent.error ? asCommandError(setAgent.error).remediation : null}
             onToggleAgent={(enabled) => setAgent.mutate(enabled)}
+            getStarted={{
+              systemReady,
+              report: setup.data,
+              expanded: systemCheckExpanded,
+              rerunning: setup.isFetching,
+              onRunCheck: () => {
+                setSystemCheckExpanded(true);
+                setup.refetch();
+              },
+              onOpenSetup: () => setOverlay("setup"),
+              onPair: () => setOverlay("pairing"),
+              onEnableAgent: () => setAgent.mutate(true),
+              agentBusy: setAgent.isPending,
+              canEnableAgent,
+            }}
             onNavigate={(id) => {
-              // Only "Devices" routes anywhere yet — back to pairing. The rest are
-              // inert until their phases land.
-              if (id === "devices") setScreen("pairing");
+              if (id === "devices") setOverlay("pairing");
+              else if (id === "settings") setOverlay("setup");
             }}
           />
           {importing && (
             <ImportModal
               device={target ?? null}
-              onClose={() => setImporting(false)}
+              onClose={() => {
+                setImporting(false);
+                // A session/ask sign-in may have changed where creds live.
+                credStatus.refetch();
+              }}
               onInstalled={() => {
                 setImporting(false);
                 apps.refetch();
+                // Reflect a fresh keyring sign-in so auto-refresh can be enabled.
+                credStatus.refetch();
               }}
             />
           )}

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, asCommandError, type DeviceInfo } from "../lib/ipc";
+import { api, asCommandError, type DeviceInfo, type RememberMode } from "../lib/ipc";
 import { useOperation, type OperationStage } from "../lib/operations";
 import { Button, Input, Label, Icon, Badge, Progress, cn } from "../components/ui";
 
@@ -27,6 +27,10 @@ const STAGE_TEXT: Record<OperationStage, string> = {
 
 const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
+// The UI offers three tiers; "ask" maps to the backend's in-memory `session`
+// store but is discarded when this modal closes (see the cleanup effect).
+type RememberChoice = "keyring" | "session" | "ask";
+
 export function ImportModal({
   device,
   onClose,
@@ -42,9 +46,29 @@ export function ImportModal({
   const [password, setPassword] = useState("");
   const [twoFa, setTwoFa] = useState("");
   const [needs2fa, setNeeds2fa] = useState(false);
+  const [remember, setRemember] = useState<RememberChoice>("keyring");
 
   const signedIn = useQuery({ queryKey: ["signed-in"], queryFn: api.isSignedIn });
+  const credStatus = useQuery({ queryKey: ["cred-status"], queryFn: api.credentialStatus });
+  const keyringAvailable = credStatus.data?.keyringAvailable ?? true;
   const op = useOperation(opId);
+
+  // Without a keyring, "on this device" isn't possible — fall back to session.
+  useEffect(() => {
+    if (!keyringAvailable && remember === "keyring") setRemember("session");
+  }, [keyringAvailable, remember]);
+
+  // For "ask every time", discard the in-memory credentials when this modal goes
+  // away (whether it closed on success or was cancelled), so they live only for
+  // this single install. A ref keeps the latest choice without re-running cleanup.
+  const rememberRef = useRef(remember);
+  rememberRef.current = remember;
+  useEffect(
+    () => () => {
+      if (rememberRef.current === "ask") void api.signOut();
+    },
+    []
+  );
 
   // Open the native picker once. Cancelling closes the modal.
   const pickedRef = useRef(false);
@@ -60,7 +84,8 @@ export function ImportModal({
   const install = useMutation({
     mutationFn: async () => {
       if (!signedIn.data && appleId && password) {
-        await api.setAppleCredentials(appleId, password);
+        const mode: RememberMode = remember === "keyring" ? "keyring" : "session";
+        await api.setAppleCredentials(appleId, password, mode);
         await signedIn.refetch();
       }
       return api.installIpa({
@@ -151,9 +176,38 @@ export function ImportModal({
                   />
                 </div>
               </div>
+              {/* How to remember the credentials */}
+              <fieldset className="space-y-1.5">
+                <legend className="mb-1 text-[12px] font-medium text-slate-700 dark:text-slate-300">
+                  Remember my Apple ID?
+                </legend>
+                <RememberOption
+                  checked={remember === "keyring"}
+                  disabled={!keyringAvailable}
+                  onSelect={() => setRemember("keyring")}
+                  title="On this device"
+                  desc={
+                    keyringAvailable
+                      ? "Saved securely in your keyring · enables automatic refresh"
+                      : "Unavailable — install a system keyring (gnome-keyring or KWallet)"
+                  }
+                />
+                <RememberOption
+                  checked={remember === "session"}
+                  onSelect={() => setRemember("session")}
+                  title="Just this session"
+                  desc="Kept in memory until you quit ReSide; never written to disk"
+                />
+                <RememberOption
+                  checked={remember === "ask"}
+                  onSelect={() => setRemember("ask")}
+                  title="Don't remember"
+                  desc="Ask me every time I install or refresh"
+                />
+              </fieldset>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                 <Icon name="shieldCheck" size={12} />
-                Stored locally in your system keyring — never uploaded anywhere but Apple.
+                Your password is only ever sent to Apple.
               </div>
             </div>
           )}
@@ -220,5 +274,47 @@ export function ImportModal({
         </div>
       </div>
     </div>
+  );
+}
+
+/// One radio row in the "Remember my Apple ID?" group.
+function RememberOption({
+  checked,
+  disabled = false,
+  onSelect,
+  title,
+  desc,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-start gap-2 rounded-md border px-2.5 py-1.5",
+        checked
+          ? "border-slate-400 bg-white dark:border-slate-600 dark:bg-slate-900"
+          : "border-slate-200 dark:border-slate-800",
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+      )}
+    >
+      <input
+        type="radio"
+        name="remember-apple-id"
+        className="mt-0.5"
+        checked={checked}
+        disabled={disabled}
+        onChange={onSelect}
+      />
+      <span className="min-w-0">
+        <span className="block text-[12.5px] font-medium text-slate-800 dark:text-slate-200">
+          {title}
+        </span>
+        <span className="block text-[11px] text-slate-500">{desc}</span>
+      </span>
+    </label>
   );
 }

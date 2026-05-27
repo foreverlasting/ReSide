@@ -64,7 +64,7 @@ pub fn run_checks(keyring_available: bool) -> Vec<SetupCheck> {
             "Secret Service keyring",
             keyring_available,
             "available — credentials stored in your keyring",
-            "no keyring detected — using encrypted filesystem fallback",
+            "not found — install gnome-keyring or KWallet to sign in (ReSide won't store your Apple password without one)",
         ),
         SetupCheck::new(
             "notifications",

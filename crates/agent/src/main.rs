@@ -78,7 +78,7 @@ impl AgentContext {
     async fn resolve() -> Result<Self> {
         let paths = Paths::resolve()?;
         paths.ensure_dirs()?;
-        let (store, _keyring_warning) = SecureStore::detect(paths.data_dir().join("secrets"));
+        let (store, _keyring_warning) = SecureStore::detect();
         let db = reside_core::db::open(paths.database_file()).await?;
         Ok(Self { paths, db, store })
     }
@@ -91,6 +91,9 @@ impl AgentContext {
             &self.paths.agent_pid_file(),
             unix_now(),
             refresh::REFRESH_LEAD_SECS,
+            // The unattended agent has no UI to type a password, so it relies on
+            // persisted (keyring) credentials — never an in-memory session creds.
+            None,
         )
         .await;
 

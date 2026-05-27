@@ -1,0 +1,242 @@
+/* hifi/dracula.css
+ * Dark-mode override: remap Tailwind's slate dark utilities + soft accent
+ * tints to the Dracula palette. Light mode is untouched.
+ *
+ * STRATEGY:
+ * - Overrides of dark: prefixed utilities (.dark\:bg-slate-900 etc.) use
+ *   !important so they win against Tailwind CDN's runtime-injected styles.
+ * - Overrides of non-prefixed utilities (.bg-slate-100, .text-slate-500 …)
+ *   do NOT use !important, so a dark: variant on the same element still wins
+ *   when in dark mode.
+ *
+ * Dracula palette:
+ *   bg          #282a36   bg-2 (deeper)  #21222c
+ *   surface     #343746   current-line   #44475a
+ *   comment     #6272a4   foreground     #f8f8f2
+ *   cyan #8be9fd  green #50fa7b  orange #ffb86c
+ *   pink #ff79c6  purple #bd93f9  red #ff5555  yellow #f1fa8c
+ */
+
+[data-theme="dark"] {
+  --dr-bg: #282a36;
+  --dr-bg-2: #21222c;
+  --dr-surface: #343746;
+  --dr-surface-2: #44475a;
+  --dr-border: #44475a;
+  --dr-border-strong: #6272a4;
+  --dr-text: #f8f8f2;
+  --dr-text-2: #e5e2dd;
+  --dr-muted: #6272a4;
+  --dr-purple: #bd93f9;
+  --dr-pink: #ff79c6;
+  --dr-cyan: #8be9fd;
+  --dr-green: #50fa7b;
+  --dr-yellow: #f1fa8c;
+  --dr-orange: #ffb86c;
+  --dr-red: #ff5555;
+  color-scheme: dark;
+}
+
+/* ============================================================
+ * dark: prefixed overrides — use !important
+ * ============================================================ */
+
+/* Surfaces */
+[data-theme="dark"] .dark\:bg-slate-950        { background-color: var(--dr-bg-2) !important; }
+[data-theme="dark"] .dark\:bg-slate-950\/80    { background-color: rgba(33, 34, 44, 0.8) !important; }
+[data-theme="dark"] .dark\:bg-slate-900        { background-color: var(--dr-bg) !important; }
+[data-theme="dark"] .dark\:bg-slate-900\/90    { background-color: rgba(40, 42, 54, 0.9) !important; }
+[data-theme="dark"] .dark\:bg-slate-900\/80    { background-color: rgba(40, 42, 54, 0.8) !important; }
+[data-theme="dark"] .dark\:bg-slate-900\/60    { background-color: rgba(40, 42, 54, 0.6) !important; }
+[data-theme="dark"] .dark\:bg-slate-900\/40    { background-color: rgba(40, 42, 54, 0.4) !important; }
+[data-theme="dark"] .dark\:bg-slate-800        { background-color: var(--dr-surface) !important; }
+[data-theme="dark"] .dark\:bg-slate-800\/60    { background-color: rgba(52, 55, 70, 0.6) !important; }
+[data-theme="dark"] .dark\:bg-slate-700        { background-color: var(--dr-surface-2) !important; }
+[data-theme="dark"] .dark\:bg-slate-600        { background-color: var(--dr-border-strong) !important; }
+
+[data-theme="dark"] .dark\:hover\:bg-slate-700:hover { background-color: var(--dr-surface-2) !important; }
+[data-theme="dark"] .dark\:hover\:bg-slate-800:hover { background-color: var(--dr-surface) !important; }
+[data-theme="dark"] .dark\:hover\:bg-slate-800\/60:hover { background-color: rgba(52, 55, 70, 0.6) !important; }
+[data-theme="dark"] .dark\:hover\:bg-slate-600:hover { background-color: var(--dr-border-strong) !important; }
+
+/* Gradient stops */
+[data-theme="dark"] .dark\:from-slate-900 {
+  --tw-gradient-from: var(--dr-bg) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(40 42 54 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+[data-theme="dark"] .dark\:to-slate-900\/90 { --tw-gradient-to: rgba(40, 42, 54, 0.9) var(--tw-gradient-to-position) !important; }
+[data-theme="dark"] .dark\:to-slate-950 { --tw-gradient-to: var(--dr-bg-2) var(--tw-gradient-to-position) !important; }
+
+/* Primary accent — anywhere dark:bg-slate-100/50 + dark:text-slate-900 is used
+ * (primary button, switch, step "current", solid badge, mini logo).
+ * Substitute Dracula purple for that "branded primary surface" feel. */
+[data-theme="dark"] .dark\:bg-slate-100,
+[data-theme="dark"] .dark\:bg-slate-50    { background-color: var(--dr-purple) !important; }
+[data-theme="dark"] .dark\:hover\:bg-slate-200:hover { background-color: #cba6fc !important; }
+[data-theme="dark"] .dark\:text-slate-900 { color: var(--dr-bg) !important; }
+[data-theme="dark"] .dark\:border-slate-100 { border-color: var(--dr-purple) !important; }
+
+/* Borders */
+[data-theme="dark"] .dark\:border-slate-800     { border-color: var(--dr-border) !important; }
+[data-theme="dark"] .dark\:border-slate-800\/70 { border-color: rgba(68, 71, 90, 0.7) !important; }
+[data-theme="dark"] .dark\:border-slate-700     { border-color: var(--dr-border-strong) !important; }
+[data-theme="dark"] .dark\:border-slate-700\/70 { border-color: rgba(98, 114, 164, 0.55) !important; }
+[data-theme="dark"] .dark\:border-slate-600     { border-color: var(--dr-border-strong) !important; }
+[data-theme="dark"] .dark\:hover\:border-slate-700:hover { border-color: var(--dr-border-strong) !important; }
+
+/* Text */
+[data-theme="dark"] .dark\:text-slate-100 { color: var(--dr-text) !important; }
+[data-theme="dark"] .dark\:text-slate-200 { color: var(--dr-text) !important; }
+[data-theme="dark"] .dark\:text-slate-300 { color: var(--dr-text-2) !important; }
+[data-theme="dark"] .dark\:text-slate-400 { color: var(--dr-muted) !important; }
+[data-theme="dark"] .dark\:text-slate-500 { color: var(--dr-muted) !important; }
+[data-theme="dark"] .dark\:hover\:text-slate-100:hover { color: var(--dr-text) !important; }
+[data-theme="dark"] .dark\:hover\:text-slate-200:hover { color: var(--dr-text) !important; }
+[data-theme="dark"] .dark\:placeholder\:text-slate-500::placeholder { color: var(--dr-muted) !important; }
+
+/* Soft accent tints */
+[data-theme="dark"] .dark\:bg-emerald-950\/40 { background-color: rgba(80, 250, 123, 0.12) !important; }
+[data-theme="dark"] .dark\:bg-emerald-900\/60 { background-color: rgba(80, 250, 123, 0.18) !important; }
+[data-theme="dark"] .dark\:text-emerald-300   { color: var(--dr-green) !important; }
+[data-theme="dark"] .dark\:text-emerald-400   { color: var(--dr-green) !important; }
+[data-theme="dark"] .dark\:border-emerald-900 { border-color: rgba(80, 250, 123, 0.35) !important; }
+
+[data-theme="dark"] .dark\:bg-amber-950\/40   { background-color: rgba(255, 184, 108, 0.14) !important; }
+[data-theme="dark"] .dark\:bg-amber-950\/30   { background-color: rgba(255, 184, 108, 0.10) !important; }
+[data-theme="dark"] .dark\:bg-amber-900\/60   { background-color: rgba(255, 184, 108, 0.22) !important; }
+[data-theme="dark"] .dark\:text-amber-300     { color: var(--dr-orange) !important; }
+[data-theme="dark"] .dark\:text-amber-400     { color: var(--dr-orange) !important; }
+[data-theme="dark"] .dark\:text-amber-200     { color: var(--dr-yellow) !important; }
+[data-theme="dark"] .dark\:border-amber-900   { border-color: rgba(255, 184, 108, 0.35) !important; }
+[data-theme="dark"] .dark\:border-amber-800   { border-color: rgba(255, 184, 108, 0.45) !important; }
+
+[data-theme="dark"] .dark\:bg-red-950\/40     { background-color: rgba(255, 85, 85, 0.14) !important; }
+[data-theme="dark"] .dark\:bg-red-950\/30     { background-color: rgba(255, 85, 85, 0.10) !important; }
+[data-theme="dark"] .dark\:bg-red-900\/60     { background-color: rgba(255, 85, 85, 0.22) !important; }
+[data-theme="dark"] .dark\:text-red-200       { color: var(--dr-red) !important; }
+[data-theme="dark"] .dark\:text-red-300       { color: var(--dr-red) !important; }
+[data-theme="dark"] .dark\:text-red-400       { color: var(--dr-red) !important; }
+[data-theme="dark"] .dark\:text-red-300\/80   { color: rgba(255, 85, 85, 0.85) !important; }
+[data-theme="dark"] .dark\:text-red-400\/70   { color: rgba(255, 85, 85, 0.75) !important; }
+[data-theme="dark"] .dark\:border-red-900     { border-color: rgba(255, 85, 85, 0.40) !important; }
+
+[data-theme="dark"] .dark\:bg-sky-950\/40     { background-color: rgba(139, 233, 253, 0.10) !important; }
+[data-theme="dark"] .dark\:text-sky-300       { color: var(--dr-cyan) !important; }
+[data-theme="dark"] .dark\:text-sky-400       { color: var(--dr-cyan) !important; }
+[data-theme="dark"] .dark\:border-sky-900     { border-color: rgba(139, 233, 253, 0.30) !important; }
+
+/* Ring colors */
+[data-theme="dark"] .dark\:ring-slate-950 { --tw-ring-color: var(--dr-bg-2) !important; }
+[data-theme="dark"] .dark\:ring-slate-100 { --tw-ring-color: var(--dr-purple) !important; }
+[data-theme="dark"] .dark\:focus-visible\:ring-slate-100:focus-visible { --tw-ring-color: var(--dr-purple) !important; }
+[data-theme="dark"] .dark\:focus-visible\:ring-offset-slate-950:focus-visible { --tw-ring-offset-color: var(--dr-bg-2) !important; }
+[data-theme="dark"] .dark\:focus\:ring-slate-100\/20:focus { --tw-ring-color: rgba(189, 147, 249, 0.25) !important; }
+[data-theme="dark"] .dark\:focus\:border-slate-500:focus { border-color: var(--dr-purple) !important; }
+
+/* Window control close hover */
+[data-theme="dark"] .dark\:hover\:bg-red-500:hover { background-color: var(--dr-red) !important; }
+
+/* ============================================================
+ * Non-dark utilities — NO !important. The dark: variant on the same
+ * element still wins because it has higher specificity in dark scope.
+ *
+ * These retune the muted-grey palette used for body text and faint
+ * borders/surfaces so it doesn't feel out of place on Dracula bg.
+ * ============================================================ */
+
+[data-theme="dark"] .text-slate-500 { color: var(--dr-muted); }
+[data-theme="dark"] .text-slate-400 { color: #7a89b8; }
+[data-theme="dark"] .text-slate-600 { color: var(--dr-text-2); }
+[data-theme="dark"] .text-slate-700 { color: var(--dr-text-2); }
+[data-theme="dark"] .text-slate-900 { color: var(--dr-text); }
+[data-theme="dark"] .text-slate-50  { color: var(--dr-bg); }
+
+[data-theme="dark"] .bg-slate-50  { background-color: rgba(98, 114, 164, 0.10); }
+[data-theme="dark"] .bg-slate-100 { background-color: rgba(98, 114, 164, 0.16); }
+[data-theme="dark"] .bg-slate-200 { background-color: var(--dr-surface-2); }
+[data-theme="dark"] .border-slate-200 { border-color: var(--dr-border); }
+[data-theme="dark"] .border-slate-300 { border-color: var(--dr-border-strong); }
+
+/* Primary surfaces used without dark: prefix (filter chips, app logo, etc.) */
+[data-theme="dark"] .bg-slate-900 { background-color: var(--dr-purple); }
+[data-theme="dark"] .hover\:bg-slate-800:hover { background-color: var(--dr-surface); }
+[data-theme="dark"] .hover\:bg-slate-100:hover { background-color: rgba(98, 114, 164, 0.16); }
+
+/* Saturated tones used without dark: prefix (status dots, progress fills, "done" check) */
+[data-theme="dark"] .bg-emerald-500 { background-color: var(--dr-green); }
+[data-theme="dark"] .bg-sky-500     { background-color: var(--dr-cyan); }
+[data-theme="dark"] .bg-sky-400     { background-color: var(--dr-cyan); }
+[data-theme="dark"] .bg-red-500     { background-color: var(--dr-red); }
+[data-theme="dark"] .bg-red-600     { background-color: var(--dr-red); }
+[data-theme="dark"] .hover\:bg-red-700:hover { background-color: #ff7070; }
+[data-theme="dark"] .bg-amber-500   { background-color: var(--dr-orange); }
+[data-theme="dark"] .bg-emerald-400 { background-color: var(--dr-green); }
+
+/* Log line tag colors / status text */
+[data-theme="dark"] .text-emerald-400 { color: var(--dr-green); }
+[data-theme="dark"] .text-emerald-500 { color: var(--dr-green); }
+[data-theme="dark"] .text-emerald-600 { color: var(--dr-green); }
+[data-theme="dark"] .text-emerald-700 { color: var(--dr-green); }
+[data-theme="dark"] .text-sky-400     { color: var(--dr-cyan); }
+[data-theme="dark"] .text-sky-600     { color: var(--dr-cyan); }
+[data-theme="dark"] .text-sky-700     { color: var(--dr-cyan); }
+[data-theme="dark"] .text-violet-400  { color: var(--dr-purple); }
+[data-theme="dark"] .text-amber-600   { color: var(--dr-orange); }
+[data-theme="dark"] .text-amber-700   { color: var(--dr-orange); }
+[data-theme="dark"] .text-amber-800   { color: var(--dr-orange); }
+[data-theme="dark"] .text-amber-900   { color: var(--dr-yellow); }
+[data-theme="dark"] .text-red-600     { color: var(--dr-red); }
+[data-theme="dark"] .text-red-700     { color: var(--dr-red); }
+[data-theme="dark"] .text-red-900     { color: var(--dr-red); }
+
+/* Soft accent tint backgrounds */
+[data-theme="dark"] .bg-emerald-50  { background-color: rgba(80, 250, 123, 0.10); }
+[data-theme="dark"] .bg-amber-50    { background-color: rgba(255, 184, 108, 0.10); }
+[data-theme="dark"] .bg-red-50      { background-color: rgba(255, 85, 85, 0.10); }
+[data-theme="dark"] .bg-sky-50      { background-color: rgba(139, 233, 253, 0.10); }
+[data-theme="dark"] .border-emerald-200 { border-color: rgba(80, 250, 123, 0.30); }
+[data-theme="dark"] .border-amber-200 { border-color: rgba(255, 184, 108, 0.30); }
+[data-theme="dark"] .border-amber-300 { border-color: rgba(255, 184, 108, 0.45); }
+[data-theme="dark"] .border-red-200 { border-color: rgba(255, 85, 85, 0.30); }
+[data-theme="dark"] .border-red-300 { border-color: rgba(255, 85, 85, 0.45); }
+[data-theme="dark"] .border-sky-200 { border-color: rgba(139, 233, 253, 0.30); }
+
+/* Expiration progress bar zones */
+[data-theme="dark"] .bg-red-100 { background-color: rgba(255, 85, 85, 0.15); }
+
+/* Stepper "ping" ring uses bare ring-white */
+[data-theme="dark"] .ring-white { --tw-ring-color: var(--dr-bg-2); }
+
+/* 2FA input focus ring */
+[data-theme="dark"] .focus\:ring-amber-400:focus { --tw-ring-color: var(--dr-orange); }
+
+/* ============================================================
+ * Gap-list remaps — dark: utilities the app actually uses that the
+ * original handoff sheet didn't cover, so they were rendering as cold
+ * stock-Tailwind slate/tints among the Dracula surfaces. (`dark:opacity-20`
+ * is intentionally omitted: opacity is theme-neutral.)
+ * ============================================================ */
+
+/* Get Started / inline-check dividers */
+[data-theme="dark"] .dark\:divide-slate-800 > :not([hidden]) ~ :not([hidden]) { border-color: var(--dr-border) !important; }
+
+/* Hover surface (tray rows) */
+[data-theme="dark"] .dark\:hover\:bg-slate-900:hover { background-color: var(--dr-bg) !important; }
+
+/* Destructive button */
+[data-theme="dark"] .dark\:bg-red-600 { background-color: var(--dr-red) !important; }
+[data-theme="dark"] .dark\:hover\:bg-red-700:hover { background-color: #ff7070 !important; }
+
+/* App-card progress danger zone */
+[data-theme="dark"] .dark\:bg-red-950\/50 { background-color: rgba(255, 85, 85, 0.16) !important; }
+
+/* Emerald success tints */
+[data-theme="dark"] .dark\:bg-emerald-950\/30 { background-color: rgba(80, 250, 123, 0.10) !important; }
+[data-theme="dark"] .dark\:text-emerald-200    { color: var(--dr-green) !important; }
+[data-theme="dark"] .dark\:text-emerald-300\/90 { color: rgba(80, 250, 123, 0.90) !important; }
+[data-theme="dark"] .dark\:text-emerald-400\/70 { color: rgba(80, 250, 123, 0.75) !important; }
+
+/* Amber warning text tints */
+[data-theme="dark"] .dark\:text-amber-300\/80 { color: rgba(255, 184, 108, 0.85) !important; }
+[data-theme="dark"] .dark\:text-amber-300\/90 { color: rgba(255, 184, 108, 0.92) !important; }

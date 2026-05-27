@@ -1,16 +1,17 @@
-//! Secret storage: system keyring (Linux Secret Service) with a filesystem
-//! fallback when no keyring daemon is reachable.
+//! Secret storage: the system keyring (Linux Secret Service) — and nothing else.
 //!
-//! All secret material (Apple ID passwords, signing keys, anisette state) flows
-//! through here and nowhere near SQLite or logs. When the keyring is missing we
-//! surface [`AppError::KeyringUnavailable`] to the UI once, then degrade to the
-//! filesystem store.
+//! All secret material (currently the Apple ID + password) flows through here and
+//! nowhere near SQLite or logs. If no keyring daemon is reachable, ReSide
+//! **refuses to store credentials** rather than fall back to a plaintext file: an
+//! Apple password is never written to disk in the clear. Callers surface
+//! [`AppError::KeyringUnavailable`] so the user installs a keyring
+//! (gnome-keyring / KWallet) before signing in.
 //!
-//! NOTE: the filesystem fallback currently writes secrets with `0600`
-//! permissions but is NOT yet encrypted at rest — that hardening is tracked as
-//! follow-up work and must land before the fallback is considered production-safe.
+//! A filesystem-backed [`SecureStore::File`] exists only under `cfg(test)`, as a
+//! convenient real backend for unit tests; production builds cannot construct it.
 
 use crate::error::{AppError, Result};
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
 const KEYRING_SERVICE: &str = "reside";
@@ -18,23 +19,25 @@ const KEYRING_SERVICE: &str = "reside";
 /// Backend selected for this process.
 #[derive(Debug, Clone)]
 pub enum SecureStore {
-    /// System Secret Service via the `keyring` crate.
+    /// System Secret Service via the `keyring` crate — the only production backend.
     Keyring,
-    /// Filesystem fallback rooted at a secrets directory.
+    /// No secure backend is available. Refuses to store secrets (so an Apple
+    /// password is never written in plain text) and reports nothing stored.
+    Unavailable,
+    /// Test-only filesystem store. Never selected by [`SecureStore::detect`];
+    /// present only so unit tests can round-trip secrets without a live keyring.
+    #[cfg(test)]
     File(PathBuf),
 }
 
 impl SecureStore {
-    /// Probe the system keyring; fall back to a filesystem store under
-    /// `secrets_dir` if it is unreachable. Returns the store plus an optional
-    /// warning the UI should surface once.
-    pub fn detect(secrets_dir: impl AsRef<Path>) -> (Self, Option<AppError>) {
+    /// Probe the system keyring. Returns [`SecureStore::Keyring`] when reachable,
+    /// else [`SecureStore::Unavailable`] plus a one-time warning the UI surfaces —
+    /// ReSide will not store credentials without a keyring.
+    pub fn detect() -> (Self, Option<AppError>) {
         match probe_keyring() {
             Ok(()) => (Self::Keyring, None),
-            Err(()) => (
-                Self::File(secrets_dir.as_ref().to_path_buf()),
-                Some(AppError::KeyringUnavailable),
-            ),
+            Err(()) => (Self::Unavailable, Some(AppError::KeyringUnavailable)),
         }
     }
 
@@ -47,6 +50,9 @@ impl SecureStore {
                     .set_password(secret)
                     .map_err(|_| AppError::KeyringUnavailable)
             }
+            // Refuse rather than persist a secret in the clear.
+            Self::Unavailable => Err(AppError::KeyringUnavailable),
+            #[cfg(test)]
             Self::File(dir) => {
                 std::fs::create_dir_all(dir)?;
                 let path = dir.join(file_name(key));
@@ -68,6 +74,9 @@ impl SecureStore {
                     Err(_) => Err(AppError::KeyringUnavailable),
                 }
             }
+            // Nothing is ever stored without a keyring.
+            Self::Unavailable => Ok(None),
+            #[cfg(test)]
             Self::File(dir) => {
                 let path = dir.join(file_name(key));
                 match std::fs::read_to_string(&path) {
@@ -89,6 +98,9 @@ impl SecureStore {
                     Err(_) => Err(AppError::KeyringUnavailable),
                 }
             }
+            // Nothing stored → nothing to delete.
+            Self::Unavailable => Ok(()),
+            #[cfg(test)]
             Self::File(dir) => {
                 let path = dir.join(file_name(key));
                 match std::fs::remove_file(&path) {
@@ -102,7 +114,7 @@ impl SecureStore {
 }
 
 /// Returns Ok if a keyring backend is reachable (an empty probe counts as
-/// reachable), Err if no storage is accessible.
+/// reachable), Err if no keyring is accessible.
 fn probe_keyring() -> std::result::Result<(), ()> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, "__probe__").map_err(|_| ())?;
     match entry.get_password() {
@@ -111,7 +123,8 @@ fn probe_keyring() -> std::result::Result<(), ()> {
     }
 }
 
-/// Map an arbitrary key to a safe flat filename.
+/// Map an arbitrary key to a safe flat filename (test-only filesystem store).
+#[cfg(test)]
 fn file_name(key: &str) -> String {
     let mut s: String = key
         .chars()
@@ -127,14 +140,14 @@ fn file_name(key: &str) -> String {
     s
 }
 
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 fn restrict_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(all(test, not(unix)))]
 fn restrict_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
@@ -177,14 +190,24 @@ mod tests {
     }
 
     #[test]
-    fn detect_returns_a_usable_store() {
-        // In headless CI there is usually no Secret Service, so this should pick
-        // the filesystem fallback and hand back a one-time warning. Either way
-        // the returned store must round-trip.
-        let tmp = tempfile::tempdir().unwrap();
-        let (store, warning) = SecureStore::detect(tmp.path().join("secrets"));
-        if let SecureStore::File(_) = store {
-            assert!(matches!(warning, Some(AppError::KeyringUnavailable)));
+    fn detect_never_falls_back_to_plaintext() {
+        // CI is usually headless (no Secret Service), so this typically picks
+        // Unavailable; a dev box with a keyring picks Keyring. Either way, detect
+        // must NEVER hand back a plaintext filesystem store.
+        let (store, warning) = SecureStore::detect();
+        match store {
+            SecureStore::Keyring => assert!(warning.is_none()),
+            SecureStore::Unavailable => {
+                assert!(matches!(warning, Some(AppError::KeyringUnavailable)));
+                // The whole point: refuse to store, report nothing stored.
+                assert!(matches!(
+                    store.set("k", "v"),
+                    Err(AppError::KeyringUnavailable)
+                ));
+                assert_eq!(store.get("k").unwrap(), None);
+                store.delete("k").unwrap();
+            }
+            SecureStore::File(_) => unreachable!("detect must never select a plaintext store"),
         }
     }
 }

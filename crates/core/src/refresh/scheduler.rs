@@ -207,6 +207,7 @@ pub async fn refresh_installation(
     ops: Option<&Operation>,
     installation_id: i64,
     now: i64,
+    creds_override: Option<&signer::AppleCredentials>,
 ) -> Result<i64> {
     let stage = |s, p, m: &str| {
         if let Some(op) = ops {
@@ -220,7 +221,7 @@ pub async fn refresh_installation(
 
     // All the work that can fail; on any error we record the disposition and
     // restore a non-"refreshing" status before returning.
-    let result = refresh_inner(pool, store, ops, &install, now).await;
+    let result = refresh_inner(pool, store, ops, &install, now, creds_override).await;
 
     match result {
         Ok(new_expiry) => {
@@ -309,10 +310,15 @@ async fn refresh_inner(
     ops: Option<&Operation>,
     install: &DueInstall,
     now: i64,
+    creds_override: Option<&signer::AppleCredentials>,
 ) -> Result<i64> {
-    let Some(creds) = signer::load_credentials(store)? else {
+    // Prefer caller-supplied in-memory (session) credentials; otherwise fall back
+    // to the stored keyring account. The unattended agent always passes None, so
+    // it can only run when creds are persisted — exactly the keyring tier.
+    let creds = match creds_override {
+        Some(c) => c.clone(),
         // No stored account → only the user can fix it. Surfaced as needs-attention.
-        return Err(AppError::AppleAuthCredentialsInvalid);
+        None => signer::load_credentials(store)?.ok_or(AppError::AppleAuthCredentialsInvalid)?,
     };
 
     // Pick the transport before signing: USB if the cable is in, else bring up
@@ -349,11 +355,20 @@ async fn refresh_inner(
     };
 
     if let Some(op) = ops {
-        op.stage(
-            OperationStage::Signing,
-            0.3,
-            Some(format!("Re-signing {}{via}…", meta.display_name)),
-        );
+        // First-ever signer run downloads a one-time ~150 MB Apple component
+        // inside the blocking `install` call below (see signer::adi_libs_present);
+        // fold the heads-up into the stage message that stays up for its whole
+        // duration so a UI-triggered refresh doesn't look hung. Mirrors install_ipa.
+        let msg = if signer::adi_libs_present() {
+            format!("Re-signing {}{via}…", meta.display_name)
+        } else {
+            format!(
+                "First sign-in: downloading a one-time component from Apple \
+                 (~150 MB) and re-signing {}{via}… This happens only once.",
+                meta.display_name
+            )
+        };
+        op.stage(OperationStage::Signing, 0.3, Some(msg));
     }
     // Never supply a 2FA code unattended: a challenge must fail loudly, not hang.
     signer::install(&InstallRequest {
@@ -397,6 +412,7 @@ pub async fn refresh_due(
     lock_path: &Path,
     now: i64,
     lead: i64,
+    creds_override: Option<&signer::AppleCredentials>,
 ) -> Result<RefreshSummary> {
     let Some(lock) = ProcLock::try_acquire(lock_path)? else {
         tracing::info!("refresh skipped: another process holds the agent lock");
@@ -411,21 +427,24 @@ pub async fn refresh_due(
     };
 
     for d in due {
-        let outcome = match refresh_installation(pool, store, None, d.installation_id, now).await {
-            Ok(new_expiration_ts) => {
-                summary.refreshed += 1;
-                RefreshOutcome::Refreshed { new_expiration_ts }
-            }
-            Err(err) => match disposition(&err) {
-                Disposition::Transient => RefreshOutcome::Retrying {
-                    category: err.category().as_key().to_string(),
-                    next_run: now + backoff_secs(retry_count(pool, d.installation_id).await),
+        let outcome =
+            match refresh_installation(pool, store, None, d.installation_id, now, creds_override)
+                .await
+            {
+                Ok(new_expiration_ts) => {
+                    summary.refreshed += 1;
+                    RefreshOutcome::Refreshed { new_expiration_ts }
+                }
+                Err(err) => match disposition(&err) {
+                    Disposition::Transient => RefreshOutcome::Retrying {
+                        category: err.category().as_key().to_string(),
+                        next_run: now + backoff_secs(retry_count(pool, d.installation_id).await),
+                    },
+                    Disposition::NeedsAttention => RefreshOutcome::NeedsAttention {
+                        category: err.category().as_key().to_string(),
+                    },
                 },
-                Disposition::NeedsAttention => RefreshOutcome::NeedsAttention {
-                    category: err.category().as_key().to_string(),
-                },
-            },
-        };
+            };
         summary.reports.push(RefreshReport {
             installation_id: d.installation_id,
             bundle_id: d.bundle_id,
@@ -765,7 +784,7 @@ mod tests {
 
         // Hold the lock as if another process were mid-refresh.
         let held = ProcLock::try_acquire(&lock_path).unwrap().unwrap();
-        let summary = refresh_due(&pool, &store, &lock_path, 1_000, REFRESH_LEAD_SECS)
+        let summary = refresh_due(&pool, &store, &lock_path, 1_000, REFRESH_LEAD_SECS, None)
             .await
             .unwrap();
         assert!(!summary.ran, "must decline while the lock is held");
@@ -780,7 +799,7 @@ mod tests {
         let now = 3_000_000;
         let id = seed_install(&pool, "nocreds", now).await;
 
-        let err = refresh_installation(&pool, &store, None, id, now)
+        let err = refresh_installation(&pool, &store, None, id, now, None)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::AppleAuthCredentialsInvalid));

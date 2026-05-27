@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { GnomeWindow } from "../components/chrome";
 import { Icon, Button, Badge, cn } from "../components/ui";
+import { ReSideMark } from "../components/logo";
 import type { SetupReport } from "../lib/ipc";
 
 type CheckStatus = "ok" | "warn";
@@ -108,42 +109,16 @@ export function Setup({
         {/* Left rail with step indicator */}
         <div className="flex w-[260px] shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50/60 px-5 py-6 dark:border-slate-800 dark:bg-slate-950">
           <div className="mb-4 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-slate-50 dark:bg-slate-100 dark:text-slate-900">
-              <Icon name="refresh" size={14} strokeWidth={2.25} />
-            </div>
+            <ReSideMark size={28} className="rounded-[7px]" />
             <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
           </div>
-          <div className="mb-4 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-            Setup · step 1 of 3
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            System dependencies
           </div>
-          {(
-            [
-              { n: 1, label: "System check", state: "current" },
-              { n: 2, label: "Pair device", state: "pending" },
-              { n: 3, label: "First IPA", state: "pending" },
-            ] as const
-          ).map((s) => (
-            <div key={s.n} className="flex items-center gap-3 py-1.5">
-              <div
-                className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold",
-                  s.state === "current"
-                    ? "border-slate-900 bg-slate-900 text-slate-50 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-                    : "border-slate-300 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
-                )}
-              >
-                {s.n}
-              </div>
-              <div
-                className={cn(
-                  "text-[13px]",
-                  s.state === "current" ? "font-medium text-slate-900 dark:text-slate-100" : "text-slate-500"
-                )}
-              >
-                {s.label}
-              </div>
-            </div>
-          ))}
+          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+            What ReSide needs in place to talk to your iPhone. Re-run this anytime
+            from here or the dashboard.
+          </p>
 
           <div className="mt-auto space-y-3">
             {railExtra}
@@ -209,14 +184,9 @@ export function Setup({
             >
               {rerunning ? "Re-running…" : "Re-run check"}
             </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onContinue}>
-                Skip for now
-              </Button>
-              <Button size="sm" iconRight="arrowRight" onClick={onContinue}>
-                Continue to pairing
-              </Button>
-            </div>
+            <Button size="sm" onClick={onContinue}>
+              Done
+            </Button>
           </div>
         </div>
       </div>

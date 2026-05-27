@@ -123,6 +123,17 @@ export interface InstallArgs {
   twoFaCode?: string;
 }
 
+/** How the user wants Apple credentials remembered (see `set_apple_credentials`). */
+export type RememberMode = "keyring" | "session";
+
+/** Where credentials are currently held, for the sign-in UI. */
+export interface CredentialStatus {
+  /** "keyring" = persisted, "session" = in-memory this run, "none" = not entered. */
+  mode: "keyring" | "session" | "none";
+  /** Whether a system keyring exists — gates the "remember on this device" option. */
+  keyringAvailable: boolean;
+}
+
 /** Returned by `refresh_app` on a successful single-app refresh. */
 export interface RefreshAppOutcome {
   installationId: number;
@@ -177,8 +188,9 @@ export const api = {
   // Sign / install (task 11b).
   pickIpa: () => invoke<string | null>("pick_ipa"),
   isSignedIn: () => invoke<boolean>("is_signed_in"),
-  setAppleCredentials: (appleId: string, password: string) =>
-    invoke<void>("set_apple_credentials", { appleId, password }),
+  credentialStatus: () => invoke<CredentialStatus>("credential_status"),
+  setAppleCredentials: (appleId: string, password: string, remember: RememberMode) =>
+    invoke<void>("set_apple_credentials", { appleId, password, remember }),
   signOut: () => invoke<void>("sign_out"),
   installIpa: ({ operationId, path, udid, twoFaCode }: InstallArgs) =>
     invoke<InstallOutcome>("install_ipa", { operationId, path, udid, twoFaCode }),

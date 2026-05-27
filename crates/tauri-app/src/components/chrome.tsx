@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import type { DeviceInfo } from "../lib/ipc";
 import { Icon, Badge, Separator, StatusDot } from "./ui";
+import { ReSideMark } from "./logo";
 
 // GNOME / libadwaita-style window chrome wrapper.
 export const GnomeWindow = ({
@@ -21,9 +22,16 @@ export const GnomeWindow = ({
   className?: string;
   innerClassName?: string;
 }) => {
+  // `data-theme` lives on a layout-invisible (`display:contents`) wrapper, NOT
+  // on the styled panel itself. Tailwind's dark variant and both theme overrides
+  // compile to *descendant* selectors (`[data-theme=dark] .dark\:…`), so an
+  // element can't theme itself — it must sit BELOW the data-theme node. Keeping
+  // them on one div left the window's own background/border/text stuck on their
+  // light values in dark mode (the panel stayed white). The wrapper anchors the
+  // theme for selector matching while contributing nothing to layout.
   return (
+    <div data-theme={dark ? "dark" : "light"} className="contents">
     <div
-      data-theme={dark ? "dark" : "light"}
       className={cn(
         "reside-scope flex h-full w-full flex-col overflow-hidden",
         "rounded-[14px] border",
@@ -73,6 +81,7 @@ export const GnomeWindow = ({
       {/* Body */}
       <div className={cn("relative flex-1 min-h-0 overflow-hidden", innerClassName)}>{children}</div>
     </div>
+    </div>
   );
 };
 
@@ -110,9 +119,7 @@ export const Sidebar = ({
     <aside className="flex w-[220px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950">
       {/* Logo */}
       <div className="flex h-12 items-center gap-2 px-4">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-900 text-slate-50 dark:bg-slate-100 dark:text-slate-900">
-          <Icon name="refresh" size={13} strokeWidth={2.25} />
-        </div>
+        <ReSideMark size={24} className="rounded-[6px]" />
         <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
         <Badge tone="neutral" className="ml-auto text-[10px]">
           v0.4

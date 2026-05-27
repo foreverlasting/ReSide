@@ -1,7 +1,27 @@
 import type { ReactNode } from "react";
 import { GnomeWindow, Sidebar } from "../components/chrome";
-import { Icon, Button, Badge, Card, CardContent, Kbd, AppTile, StatusDot, cn } from "../components/ui";
-import type { DeviceInfo, InstalledApp } from "../lib/ipc";
+import { Icon, Button, Badge, Card, CardContent, Kbd, Separator, AppTile, StatusDot, cn } from "../components/ui";
+import type { DeviceInfo, InstalledApp, SetupReport } from "../lib/ipc";
+
+// Everything the live "Get Started" onboarding panel needs. Passed from
+// ReSideApp, which derives `systemReady` from the setup check and owns the
+// actions (run check, open the detailed Setup/Pairing surfaces on demand,
+// enable the background agent). When absent, the dashboard is in gallery mode.
+export interface GetStartedHandlers {
+  systemReady: boolean;
+  report?: SetupReport;
+  expanded: boolean;
+  rerunning: boolean;
+  onRunCheck: () => void;
+  onOpenSetup: () => void;
+  onPair: () => void;
+  onEnableAgent: () => void;
+  agentBusy: boolean;
+  // Auto-refresh runs unattended, so it needs credentials saved on this device
+  // (the keyring tier). False when creds are session-only or not entered, which
+  // gates the "enable auto-refresh" affordances.
+  canEnableAgent: boolean;
+}
 
 type AppStatus = "healthy" | "refreshSoon" | "refreshing" | "expired";
 
@@ -26,8 +46,9 @@ const SAMPLE_APPS: SampleApp[] = [
 // `live` opts into the real app (vs. the design Gallery): apps come from the
 // backend (`apps`), the sidebar shows the real `device`, `onImport` opens the
 // sign+install flow, and `toolbarExtra` (live status pills + theme toggle)
-// replaces the mock search + bell. `onNavigate` lets the sidebar route back to
-// pairing.
+// replaces the mock search + bell. The app ALWAYS opens here — no gated wizard;
+// `getStarted` drives the inline onboarding panel and `onNavigate` reaches the
+// on-demand Setup/Pairing surfaces.
 export function Dashboard({
   dark = false,
   empty = false,
@@ -45,6 +66,7 @@ export function Dashboard({
   agentBusy = false,
   agentError,
   onToggleAgent,
+  getStarted,
 }: {
   dark?: boolean;
   empty?: boolean;
@@ -62,15 +84,43 @@ export function Dashboard({
   agentBusy?: boolean;
   agentError?: string | null;
   onToggleAgent?: (enabled: boolean) => void;
+  getStarted?: GetStartedHandlers;
 }) {
-  // In live mode the apps area reflects the real install list.
-  const noApps = live ? apps.length === 0 : empty;
+  const hasApps = live ? apps.length > 0 : !empty;
+  const hasDevice = !!device;
+  const systemReady = getStarted?.systemReady ?? false;
+  // `noApps` keeps the gallery (non-live) branches working unchanged.
+  const noApps = live ? !hasApps : empty;
+  // Live onboarding is "complete" once a device is paired and the system check
+  // passes — that's the friendly empty state. Before that we show Get Started.
+  const onboardingComplete = hasDevice && systemReady;
+  const showGetStarted = live && !hasApps && !onboardingComplete;
+
   const deviceLabel = device?.name ?? (device ? `${device.udid.slice(0, 8)}…` : null);
 
+  // Live header copy by stage.
+  let liveHeadline = "Installed apps";
+  let liveSubhead = "Pair a device to get started.";
+  if (hasApps) {
+    liveSubhead = `${apps.length} app${apps.length === 1 ? "" : "s"} on ${deviceLabel ?? "your device"}.`;
+  } else if (onboardingComplete) {
+    liveSubhead = `${deviceLabel} is paired and reachable. Import an IPA to sign and install it.`;
+  } else if (systemReady) {
+    liveHeadline = "Welcome back";
+    liveSubhead = "Your system is ready — pair an iPhone or iPad to start.";
+  } else {
+    liveHeadline = "Welcome to ReSide";
+    liveSubhead = "Three quick things and you'll be installing your first app.";
+  }
+
   const subtitle = live
-    ? deviceLabel
+    ? hasApps && deviceLabel
       ? `Apps · ${deviceLabel}`
-      : "No device"
+      : onboardingComplete
+        ? "Ready to install"
+        : systemReady
+          ? "One more step"
+          : "Let's get you set up"
     : empty
       ? "Welcome"
       : "Apps · Maya's iPhone";
@@ -113,17 +163,13 @@ export function Dashboard({
         <main className="flex min-w-0 flex-1 flex-col">
           {/* Header */}
           <div className="flex shrink-0 items-end justify-between gap-6 border-b border-slate-200 px-6 pb-4 pt-5 dark:border-slate-800">
-            <div>
+            <div className="min-w-0">
               <h1 className="text-[20px] font-semibold tracking-tight">
-                {live ? "Your apps" : empty ? "Welcome to ReSide" : "Installed apps"}
+                {live ? liveHeadline : empty ? "Welcome to ReSide" : "Installed apps"}
               </h1>
               <p className="mt-0.5 text-[13px] text-slate-500 dark:text-slate-400">
                 {live
-                  ? deviceLabel
-                    ? noApps
-                      ? `${deviceLabel} is paired and reachable. Import an IPA to sign and install it.`
-                      : `${apps.length} app${apps.length === 1 ? "" : "s"} on ${deviceLabel}.`
-                    : "Pair a device to get started."
+                  ? liveSubhead
                   : empty
                     ? "Drop an .ipa to get started. We'll handle signing and re-signing every 6 days."
                     : "6 apps on Maya's iPhone · next auto-refresh in 1d 19h"}
@@ -136,7 +182,7 @@ export function Dashboard({
                   Refresh all
                 </Button>
               )}
-              {!noApps && live && onRefreshAll && (
+              {hasApps && live && onRefreshAll && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -150,14 +196,20 @@ export function Dashboard({
               {/* The autopilot toggle: installs/removes the systemd timer (or
                   autostart fallback) that runs "Refresh all due" while ReSide
                   is closed. `title` carries the host-specific explanation. */}
-              {!noApps && live && onToggleAgent && (
+              {hasApps && live && onToggleAgent && (
                 <Button
                   variant={agentEnabled ? "default" : "outline"}
                   size="sm"
                   iconLeft="refresh"
-                  disabled={agentBusy}
+                  // Can't turn it ON without saved (keyring) credentials; once on,
+                  // it stays toggleable so the user can turn it back off.
+                  disabled={agentBusy || (!agentEnabled && !(getStarted?.canEnableAgent ?? false))}
                   onClick={() => onToggleAgent(!agentEnabled)}
-                  title={agentError ?? agentDetail}
+                  title={
+                    !agentEnabled && !(getStarted?.canEnableAgent ?? false)
+                      ? "Save your Apple ID on this device (choose it at sign-in) to enable automatic refresh."
+                      : (agentError ?? agentDetail)
+                  }
                 >
                   {agentBusy
                     ? "Saving…"
@@ -177,7 +229,9 @@ export function Dashboard({
             </div>
           </div>
 
-          {noApps ? (
+          {showGetStarted && getStarted ? (
+            <GetStartedPanel gs={getStarted} hasDevice={hasDevice} onChoose={onImport} />
+          ) : noApps ? (
             <EmptyDashboard live={live} onChoose={onImport} />
           ) : live ? (
             <LiveApps apps={apps} onRefreshApp={onRefreshApp} />
@@ -187,6 +241,278 @@ export function Dashboard({
         </main>
       </div>
     </GnomeWindow>
+  );
+}
+
+// ---------- Get Started panel (live onboarding, shown inside the dashboard) ----------
+function GetStartedPanel({
+  gs,
+  hasDevice,
+  onChoose,
+}: {
+  gs: GetStartedHandlers;
+  hasDevice: boolean;
+  onChoose?: () => void;
+}) {
+  const systemDone = gs.systemReady;
+  const headline = systemDone ? "One more step" : "Get started";
+  const copy = systemDone
+    ? "Your system passed all checks. Pair a device to start installing apps."
+    : "Run through these once. ReSide handles the rest in the background after that.";
+
+  // Step states derived from live progress.
+  const systemState: StepState = systemDone ? "done" : "current";
+  const pairState: StepState = hasDevice ? "done" : systemDone ? "current" : "pending";
+  const installState: StepState = "pending";
+  const doneCount = [systemState, pairState, installState].filter((s) => s === "done").length;
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <Card className="mx-auto max-w-[760px]">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-3 pb-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+              <Icon name="zap" size={15} className="text-slate-700 dark:text-slate-300" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] font-semibold tracking-tight">{headline}</div>
+              <div className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">{copy}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono text-[18px] font-semibold tabular-nums">
+                {doneCount}
+                <span className="text-slate-400">/3</span>
+              </div>
+              <div className="text-[10.5px] text-slate-500">complete</div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            <GetStartedStep
+              idx={0}
+              label="Check system dependencies"
+              desc="Verify usbmuxd, libimobiledevice, the signing backend, udev rules, the refresh agent, and notifications."
+              state={systemState}
+              expanded={gs.expanded}
+              gs={gs}
+            >
+              {systemState === "current" ? (
+                gs.expanded ? (
+                  <Button size="sm" variant="ghost" iconLeft="refresh" disabled={gs.rerunning} onClick={gs.onRunCheck}>
+                    {gs.rerunning ? "Re-running…" : "Re-run"}
+                  </Button>
+                ) : (
+                  <Button size="sm" iconRight="arrowRight" onClick={gs.onRunCheck}>
+                    Run check
+                  </Button>
+                )
+              ) : null}
+            </GetStartedStep>
+
+            <GetStartedStep
+              idx={1}
+              label="Pair an iPhone or iPad"
+              desc="Plug in by USB and tap Trust on the device."
+              state={pairState}
+            >
+              {pairState === "current" ? (
+                <Button size="sm" iconRight="arrowRight" onClick={gs.onPair}>
+                  Pair device
+                </Button>
+              ) : pairState === "pending" ? (
+                <Button size="sm" variant="outline" disabled>
+                  Pair device
+                </Button>
+              ) : null}
+            </GetStartedStep>
+
+            <GetStartedStep
+              idx={2}
+              label="Install your first IPA"
+              desc="Drop an .ipa file and we'll sign + install it."
+              state={installState}
+            >
+              <Button size="sm" variant="outline" disabled={!hasDevice} onClick={hasDevice ? onChoose : undefined}>
+                Choose IPA
+              </Button>
+            </GetStartedStep>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type StepState = "done" | "current" | "pending";
+
+function GetStartedStep({
+  idx,
+  label,
+  desc,
+  state,
+  expanded = false,
+  gs,
+  children,
+}: {
+  idx: number;
+  label: string;
+  desc: string;
+  state: StepState;
+  expanded?: boolean;
+  gs?: GetStartedHandlers;
+  children?: ReactNode;
+}) {
+  const numClasses =
+    state === "done"
+      ? "border-emerald-500 bg-emerald-500 text-white"
+      : state === "current"
+        ? "border-slate-900 bg-slate-900 text-slate-50 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+        : "border-slate-300 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500";
+
+  const warnCount = gs?.report?.warn ?? 0;
+  const showInline = state === "current" && expanded && gs;
+
+  return (
+    <div className="py-4">
+      <div className="flex items-center gap-4">
+        <div
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold",
+            numClasses
+          )}
+        >
+          {state === "done" ? <Icon name="check" size={12} strokeWidth={3} /> : idx + 1}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "text-[13.5px] font-medium",
+                state === "pending" ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"
+              )}
+            >
+              {label}
+            </div>
+            {showInline && warnCount > 0 && (
+              <Badge tone="warning">
+                <StatusDot tone="warning" className="mr-1" />
+                {warnCount} {warnCount === 1 ? "warning" : "warnings"}
+              </Badge>
+            )}
+          </div>
+          <div className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">{desc}</div>
+        </div>
+        <div className="shrink-0">
+          {state === "done" ? (
+            <span className="text-[11.5px] font-medium text-emerald-600 dark:text-emerald-400">Done</span>
+          ) : (
+            children
+          )}
+        </div>
+      </div>
+
+      {showInline && <InlineSystemCheck gs={gs} />}
+    </div>
+  );
+}
+
+function InlineSystemCheck({ gs }: { gs: GetStartedHandlers }) {
+  const items = gs.report?.items ?? [];
+  return (
+    <div className="ml-11 mt-4 rounded-lg border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40">
+      <div className="divide-y divide-slate-200 dark:divide-slate-800">
+        {items.length === 0 ? (
+          <div className="px-3 py-3 text-[12px] text-slate-500">Running check…</div>
+        ) : (
+          items.map((c) => (
+            <InlineCheckRow
+              key={c.key}
+              label={c.label}
+              // Explain inline why auto-refresh can't be enabled when creds aren't
+              // saved on this device, instead of an action the user can't take.
+              meta={
+                c.key === "agent" && !gs.canEnableAgent
+                  ? "Save your Apple ID on this device (at sign-in) to enable auto-refresh"
+                  : c.detail
+              }
+              status={c.status}
+              // The one warning we can fix in-app is the background agent — and
+              // only when credentials are persisted (keyring) for unattended runs.
+              action={
+                c.status === "warn" && c.key === "agent" && gs.canEnableAgent
+                  ? "Enable agent"
+                  : undefined
+              }
+              onAction={gs.onEnableAgent}
+              actionBusy={gs.agentBusy}
+            />
+          ))
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2.5 dark:border-slate-800">
+        <div className="flex items-center gap-2 text-[11.5px] text-slate-500">
+          <Icon name="terminal" size={12} />
+          <span>Or fix all from terminal:</span>
+          <code className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+            reside doctor --fix
+          </code>
+        </div>
+        <Button size="sm" variant="outline" onClick={gs.onOpenSetup}>
+          Open detailed view
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function InlineCheckRow({
+  label,
+  meta,
+  status,
+  action,
+  onAction,
+  actionBusy = false,
+}: {
+  label: string;
+  meta: string;
+  status: "ok" | "warn";
+  action?: string;
+  onAction?: () => void;
+  actionBusy?: boolean;
+}) {
+  const isOk = status === "ok";
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <div
+        className={cn(
+          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+          isOk
+            ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+            : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+        )}
+      >
+        <Icon name={isOk ? "check" : "alert"} size={12} strokeWidth={2.5} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-medium">{label}</div>
+        <div className="mt-0 font-mono text-[10.5px] text-slate-500 dark:text-slate-400">{meta}</div>
+      </div>
+      {action ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-[11.5px]"
+          disabled={actionBusy}
+          onClick={onAction}
+        >
+          {actionBusy ? "…" : action}
+        </Button>
+      ) : (
+        <span className="text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400">{isOk ? "OK" : "—"}</span>
+      )}
+    </div>
   );
 }
 

@@ -1,3 +1,8 @@
+> **Historical (pre-pivot product brief).** The product vision still holds, but
+> the architecture sections predate the decision to drive a forked Sideloader
+> rather than reimplement signing natively. For current truth see
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## tl;dr
 
 Build a Linux-first desktop app that lets users sign, sideload, and automatically refresh iOS apps on their own iPhone or iPad using USB or Wi-Fi. The key differentiator is reliable background refresh over Wi-Fi before the 7-day free Apple ID signing window expires, with Arch Linux as the primary target and broader Linux support as a stretch goal.

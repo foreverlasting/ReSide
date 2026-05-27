@@ -1,9 +1,14 @@
 //! Signing providers + the IPA signing pipeline.
 //!
-//! Two `SigningProvider` implementations feed one `ipa_pipeline`:
-//! `free_apple_id` (omnisette + icloud-auth + apple-dev-apis, with ADI FFI) and
-//! `paid_cert` (import p12 + .mobileprovision). The trait is the project's
-//! insurance policy against upstream churn — do not collapse it. Phase 2.
+//! ⚠️ **PARKED — superseded by [`crate::signer`].** This is the abandoned
+//! native signing/Apple-auth path. ReSide now drives the forked Sideloader CLI
+//! (which does all signing); this module is **not wired into the live app** and
+//! is kept for reference / the `native-signing-path` branch. See
+//! `docs/ARCHITECTURE.md` (Live vs parked) before building on anything here.
+//!
+//! For historical context: two `SigningProvider` implementations feed one
+//! `ipa_pipeline` — `free_apple_id` (omnisette + icloud-auth + apple-dev-apis,
+//! with ADI FFI) and `paid_cert` (import p12 + .mobileprovision).
 
 pub mod adi;
 pub mod bundle_id;

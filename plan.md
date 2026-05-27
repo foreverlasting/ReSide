@@ -1,5 +1,13 @@
 # Linux iOS Sideloading App — Architecture Plan
 
+> **Historical (pre-pivot, native-signing design).** Much of this document —
+> the signing ecosystem, `apple-private-apis` pins, the ADI FFI boundary, the
+> `SigningProvider`/`Transport` traits, and the phased plan — describes the
+> **abandoned** native-signing approach. ReSide now drives a forked Sideloader
+> CLI. Some Known Foot-Guns still apply (never bundle ADI libs, don't copy the
+> device file, `tracing` not `println!`, don't auto-bump pins); others are about
+> parked code. **Current source of truth: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).**
+
 ## Context
 
 Linux-first desktop app for signing, sideloading, and auto-refreshing iOS apps on a personal iPhone/iPad — a native Linux alternative to Windows tools like Sideloadly.

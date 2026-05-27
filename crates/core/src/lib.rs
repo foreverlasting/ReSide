@@ -3,10 +3,15 @@
 //! The UI (Tauri) and the background agent both depend on this crate. Keep it
 //! free of Tauri- and UI-specific concerns so a future CLI binary can reuse it.
 //!
-//! Phase status: 0b primitives are implemented (error taxonomy, operation
-//! events, paths, db + migrations, secure storage, process lock, IPA store).
-//! Domain modules (device/transport/signing/installer/refresh/setup) are stubs
-//! that land with their respective phases.
+//! Implemented and hardware-validated: sign + install over USB and Wi-Fi,
+//! auto-refresh engine + unattended agent, 3-tier credentials.
+//!
+//! LIVE vs PARKED (see `docs/ARCHITECTURE.md`): the live signing path is
+//! [`signer`], which drives the forked Sideloader CLI. The [`signing`] module
+//! and [`setup::adi_provision`] are the **superseded native attempt** — still
+//! compiled but not wired into the live app (the Tauri backend uses `signer`,
+//! never `signing`). Their comments may still say "Phase 2/future"; that is
+//! historical, not a roadmap.
 
 pub mod db;
 pub mod error;

@@ -2,3 +2,10 @@
 # esbuild ships a native binary via a postinstall script; it must be allowed to run.
 onlyBuiltDependencies:
   - esbuild
+
+# pnpm 11 refuses to run esbuild's postinstall and then aborts `pnpm build` /
+# `pnpm tauri:dev` on its pre-run dependency check (ERR_PNPM_IGNORED_BUILDS).
+# esbuild ships its native binary (@esbuild/<platform>) prebuilt, so that script
+# is unnecessary and the abort is a false positive — turn the check off so the
+# documented build commands work unmodified. See docs/ARCHITECTURE.md.
+verifyDepsBeforeRun: false

@@ -91,6 +91,24 @@ also what lets the systemd agent self-configure):
 
 ## Build / run / gates
 
+**Prerequisites:** Rust via rustup (the `rust-toolchain.toml` pin — 1.95.0 +
+clippy/rustfmt — installs on first `cargo` run, so all environments match);
+Node 18+ and pnpm 10+; and Tauri's Linux system libs (WebKitGTK 4.1, GTK 3,
+libsoup 3, a C toolchain, `pkg-config`). No `-dev` split on Arch — the runtime
+packages carry the headers.
+
+**The esbuild / pnpm gotcha (don't relearn this):** recent pnpm (11.x) won't run
+esbuild's postinstall build script and then *aborts* `pnpm build` / `pnpm
+tauri:dev` on its pre-run dependency check — `ERR_PNPM_IGNORED_BUILDS`. esbuild
+ships its native binary (`@esbuild/<platform>`) prebuilt, so that script is
+unnecessary and the abort is a false positive. A committed `verifyDepsBeforeRun:
+false` in `crates/tauri-app/pnpm-workspace.yaml` disables the check so the
+commands below work unmodified; the "ignored build scripts: esbuild" line at
+`pnpm install` time is cosmetic. (Equivalent one-off: pass
+`--config.verifyDepsBeforeRun=false`. Note: `onlyBuiltDependencies` in that same
+file is *not* honored by this pnpm version, and the setting is read from
+`pnpm-workspace.yaml`, not `.npmrc`.)
+
 From the repo root, keep all four green:
 
 ```sh

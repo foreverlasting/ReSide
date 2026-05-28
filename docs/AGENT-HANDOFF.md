@@ -16,9 +16,9 @@ Apple's signing stack. Solo dev, open-source GPL-3.0, Arch/CachyOS-first.
    map. The live signing path is `signer.rs` (drives the fork); the `signing/`
    module + `setup/adi_provision.rs` are the **abandoned native attempt** — don't
    build on them, even though their doc comments still say "Phase 2/future."
-2. `docs/ROADMAP.md` — prioritized work. **Start at item 1: certificate-management
-   + credential settings UI** (the biggest new-user cliff — free Apple IDs cap at
-   ~2 certs and there's no in-app revoke).
+2. `docs/ROADMAP.md` — prioritized work. Items 1–3 are **done** (cert-management +
+   settings UI shipped and hardware-validated 2026-05-28, incl. inline 2FA in
+   Settings). **Start at item 4: AUR packaging.**
 3. Code + `git log` are ground truth; trust them over older prose. `plan.md` and
    `Product-Brief.md` are historical (pre-pivot) — `docs/ARCHITECTURE.md` supersedes them.
 

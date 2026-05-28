@@ -244,6 +244,9 @@ pub struct CredentialStatus {
     /// "keyring" | "session" | "none".
     mode: &'static str,
     keyring_available: bool,
+    /// The signed-in Apple ID (email), so Settings can show *which* account is
+    /// active instead of a bare empty form. `None` when `mode` is "none".
+    apple_id: Option<String>,
 }
 
 #[tauri::command]
@@ -264,6 +267,7 @@ async fn credential_status(state: tauri::State<'_, AppState>) -> CmdResult<Crede
     Ok(CredentialStatus {
         mode,
         keyring_available,
+        apple_id: state.resolve_credentials().map(|c| c.apple_id),
     })
 }
 
@@ -302,29 +306,33 @@ async fn sign_out(state: tauri::State<'_, AppState>) -> CmdResult<()> {
 
 /// List the Apple account's development certificates (Settings → Certificates).
 /// Returns `AppleAuthCredentialsInvalid` if no Apple ID is stored yet, or the
-/// auth/2FA category if Apple challenges the login.
+/// `AppleAuth2FARequired` category if Apple challenges the login — re-invoke with
+/// `two_fa_code` set, exactly like [`install_ipa`].
 #[tauri::command]
 async fn list_certificates(
     state: tauri::State<'_, AppState>,
+    two_fa_code: Option<String>,
 ) -> CmdResult<Vec<reside_core::signer::CertInfo>> {
     let Some(creds) = state.resolve_credentials() else {
         return Err(AppError::AppleAuthCredentialsInvalid.into());
     };
-    Ok(reside_core::signer::list_certs(&creds).await?)
+    Ok(reside_core::signer::list_certs(&creds, two_fa_code.as_deref()).await?)
 }
 
 /// Revoke the certificate with `serial_number` (from [`list_certificates`]).
 /// This is the way out of `AppleCertLimitReached`: free Apple IDs cap at ~2
-/// certs, so revoking a stale one lets signing proceed again.
+/// certs, so revoking a stale one lets signing proceed again. Like
+/// [`list_certificates`], re-invoke with `two_fa_code` set if Apple challenges.
 #[tauri::command]
 async fn revoke_certificate(
     state: tauri::State<'_, AppState>,
     serial_number: String,
+    two_fa_code: Option<String>,
 ) -> CmdResult<()> {
     let Some(creds) = state.resolve_credentials() else {
         return Err(AppError::AppleAuthCredentialsInvalid.into());
     };
-    reside_core::signer::revoke_cert(&creds, &serial_number).await?;
+    reside_core::signer::revoke_cert(&creds, &serial_number, two_fa_code.as_deref()).await?;
     Ok(())
 }
 

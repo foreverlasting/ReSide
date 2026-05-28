@@ -29,7 +29,7 @@ silently failed, KDE menu icon missed, tray init panicked without
 libappindicator, mock-gallery screens read as half-built); all fixed in
 PRs #5–#8, version bump in #9.
 
-## 1. Certificate management + credential settings UI  ← start here
+## 1. Certificate management + credential settings UI  — **DONE 2026-05-28**
 
 **Why:** the biggest new-user cliff. Free Apple IDs cap at ~2 active dev certs;
 when a user hits it, signing fails and the app offers **no way out**. There's
@@ -49,7 +49,7 @@ on one node).
 **Done when:** a user at the 2-cert cap can revoke from the UI and immediately
 sign again; can switch Apple IDs without editing files. Validate on hardware.
 
-**Status (2026-05-26): built, four gates green, NOT yet hardware-validated.**
+**Status (2026-05-28): DONE — hardware-validated.**
 - Core: `signer::{list_certs, revoke_cert}` drive the fork's `cert list|revoke`
   (parsing its human output — no new fork patch); `parse_cert_list` is unit-tested.
 - New error `AppleCertLimitReached` (category + remediation), classified off Apple's
@@ -57,15 +57,19 @@ sign again; can switch Apple IDs without editing files. Validate on hardware.
 - Tauri commands `list_certificates` / `revoke_certificate`; IPC `CertInfo`.
 - UI: `screens/Settings.tsx` (a new "settings" overlay; the sidebar/dashboard
   "settings" nav now opens it, not Setup) with a Certificates list+revoke and an
-  Apple ID change/forget form. Plus the chosen **auto-prompt at the cap**: when an
+  Apple ID change/forget form. Plus the **auto-prompt at the cap**: when an
   install/refresh fails with `AppleCertLimitReached`, the modal shows a "Manage
   certificates" button that jumps to Settings.
-- **Known gap:** if `cert list`/`revoke` triggers a fresh 2FA challenge, Settings
-  only shows the remediation text — there's no inline code entry (a trusted device
-  skips 2FA, so this is rare). Wire a 2FA prompt here if hardware shows it's needed.
-- **Validate on hardware:** with ≥1 cert on the account, open Settings → see the
-  list; revoke one → it disappears and a subsequent sign works; force the cap to
-  confirm the install-modal auto-prompt appears and lands on Settings.
+- **Hardware test (2026-05-28):** see-certs, revoke-then-sign, and switch/forget
+  Apple ID all passed on the user's device. The cap auto-prompt couldn't be
+  force-triggered (didn't hit a 3rd-cert request) but the cap state was seen.
+- **2FA gap CLOSED:** the test hit a fresh 2FA challenge in Settings, confirming
+  the gap was real, so an inline prompt is now wired: `list_certs`/`revoke_cert`
+  take an optional `two_fa_code` (mirrors `install`), surfaced as a `TwoFaPrompt`
+  in the Certificates panel (held code reused across cert calls).
+- **Follow-up UX shipped same session:** `credential_status` now returns the
+  signed-in Apple ID; the Settings Apple ID section shows an identity row + a
+  "Switch account" toggle instead of an always-open empty login form.
 
 ## 2. Pre-public polish — **DONE 2026-05-28**
 
@@ -104,7 +108,7 @@ when no cable is attached; `device::list_devices` therefore treats a
 connection failure as "no USB devices" rather than fatal, so the Wi-Fi
 cache can still surface a resolved card. Don't regress that.
 
-## 4. AUR packaging
+## 4. AUR packaging  ← start here
 
 **Why:** the planned real distribution channel for Arch/CachyOS users; sources
 from the GitHub Release. **Scope:** a `PKGBUILD` that pulls the release tarball

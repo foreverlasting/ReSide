@@ -46,6 +46,25 @@ LAUNCHER="$BINDIR/reside"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
+# Refresh the desktop-entry + icon caches so the menu picks up our entry and
+# icon immediately, without a re-login. Three caches; not all DEs have all
+# three, so each is best-effort.
+#
+#   update-desktop-database  — the application database (GNOME, XFCE, …).
+#   gtk-update-icon-cache    — GTK's hicolor icon-name → file index.
+#   kbuildsycoca6/5          — KDE Plasma's separate app database. KDE does
+#                              not consult GTK's icon cache, so this is the
+#                              one that actually makes the icon show up under
+#                              Plasma. Prefer v6 (Plasma 6, current); fall
+#                              back to v5.
+refresh_desktop_caches() {
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR"   2>/dev/null || true
+  command -v gtk-update-icon-cache   >/dev/null 2>&1 && gtk-update-icon-cache --force --quiet "$HICOLOR" 2>/dev/null || true
+  if   command -v kbuildsycoca6 >/dev/null 2>&1; then kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+  elif command -v kbuildsycoca5 >/dev/null 2>&1; then kbuildsycoca5 --noincremental >/dev/null 2>&1 || true
+  fi
+}
+
 uninstall() {
   say "Removing ReSide"
   rm -rf "$LIBDIR"
@@ -55,8 +74,7 @@ uninstall() {
     src="${entry##*:}"
     rm -f "$HICOLOR/$subdir/reside.${src##*.}"
   done
-  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
-  command -v gtk-update-icon-cache  >/dev/null 2>&1 && gtk-update-icon-cache  --force --quiet "$HICOLOR" 2>/dev/null || true
+  refresh_desktop_caches
   say "Removed. (Your signed apps, credentials, and app data under ~/.local/share/reside were left untouched.)"
   exit 0
 }
@@ -92,10 +110,7 @@ ln -sf "$LIBDIR/reside" "$LAUNCHER"
 sed "s|__EXEC__|$LIBDIR/reside|" "$SRC_DIR/reside.desktop" > "$DESKTOP_FILE"
 chmod 0644 "$DESKTOP_FILE"
 
-# Refresh icon + desktop caches so the menu picks up the new entry + icon
-# immediately, without a re-login. Best-effort: missing tools are not fatal.
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
-command -v gtk-update-icon-cache  >/dev/null 2>&1 && gtk-update-icon-cache  --force --quiet "$HICOLOR" 2>/dev/null || true
+refresh_desktop_caches
 
 say "Installed."
 echo "  Launch from your app menu (\"ReSide\"), or run: reside"

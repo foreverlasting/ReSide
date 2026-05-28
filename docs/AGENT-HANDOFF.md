@@ -22,16 +22,18 @@ Apple's signing stack. Solo dev, open-source GPL-3.0, Arch/CachyOS-first.
 3. Code + `git log` are ground truth; trust them over older prose. `plan.md` and
    `Product-Brief.md` are historical (pre-pivot) — `docs/ARCHITECTURE.md` supersedes them.
 
-**State right now:** functionally complete and hardware-validated. The first
-GitHub Release is **staged but private**: repo `foreverlasting/ReSide` (branch
-`automation-layer` pushed as `main`), a **v0.4.1 draft** that supersedes the
-never-published v0.4.0 draft. The bump rolled in four hardening fixes after
-v0.4.0's hardware test on KDE Plasma / CachyOS / Wayland: Wayland launch fix
-(#5), pre-public polish (#6), multi-size icon install + system tray (#7),
-catch_unwind around tray init + absolute `Icon=` path for KDE (#8). Go-live
-(flip public → publish the Sideloader fork for GPL source → un-draft) is
-**outward-facing: needs the user's explicit go-ahead** — see
-`packaging/RELEASING.md`.
+**State right now:** functionally complete, hardware-validated, **public as of
+2026-05-28**. Repo `foreverlasting/ReSide` (default branch `main`, local
+working branch `automation-layer`) and the GPL-fork `foreverlasting/Sideloader`
+(branch `reside-automation`) are both public. **v0.4.1 release is published**
+at <https://github.com/foreverlasting/ReSide/releases/tag/v0.4.1> (sha256
+`6312a2dfa81029b0f220235f7f984efc798e58e2bf54a6231875e1934f70bf57`). v0.4.1
+supersedes a never-published v0.4.0 draft; it rolled in four hardening fixes
+after v0.4.0's hardware test on KDE Plasma 6 / CachyOS / Wayland: Wayland
+launch fix (#5), pre-public polish (#6), multi-size icon install + system tray
+(#7), catch_unwind around tray init + absolute `Icon=` path for KDE (#8).
+Subsequent releases will follow the same flow — `packaging/RELEASING.md`
+remains the canonical checklist.
 
 **Working norms (non-negotiable):**
 - The user is **not a developer**. Explain plainly, use analogies, ground jargon.

@@ -70,7 +70,14 @@ install -m 0755 "$NETMUXD_SRC"     "$STAGE_DIR/netmuxd"
 
 install -m 0755 "$SCRIPT_DIR/install.sh"   "$STAGE_DIR/install.sh"
 install -m 0644 "$SCRIPT_DIR/reside.desktop" "$STAGE_DIR/reside.desktop"
-install -m 0644 "crates/tauri-app/src-tauri/icons/icon.png" "$STAGE_DIR/reside.png"
+
+# Stage the full icon set (SVG + multiple PNG sizes). install.sh fans these
+# out into the hicolor theme so the menu, taskbar, alt-tab, and tray all find
+# a crisp rendering. The list must match `ICON_INSTALLS` in install.sh.
+mkdir -p "$STAGE_DIR/icons"
+for f in icon.svg icon.png 32x32.png 128x128.png 128x128@2x.png; do
+  install -m 0644 "crates/tauri-app/src-tauri/icons/$f" "$STAGE_DIR/icons/$f"
+done
 
 install -m 0644 README.md    "$STAGE_DIR/README.md"
 install -m 0644 LICENSE      "$STAGE_DIR/LICENSE"

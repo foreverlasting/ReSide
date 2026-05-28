@@ -7,7 +7,9 @@
 #   ~/.local/lib/reside/      reside, sideloader, netmuxd, reside.png  (kept together)
 #   ~/.local/bin/reside       symlink onto the app  (so `reside` works from a terminal)
 #   ~/.local/share/applications/dev.reside.app.desktop   (so it shows in your menu)
-#   ~/.local/share/icons/hicolor/512x512/apps/reside.png
+#   ~/.local/share/icons/hicolor/{scalable,32x32,128x128,256x256,512x512}/apps/reside.{svg,png}
+#       (multiple sizes + an SVG so the desktop environment can pick a crisp
+#       rendering at any display size — apps menu, taskbar, alt-tab, etc.)
 #
 # The three binaries MUST stay in the same folder: ReSide finds the signer and
 # Wi-Fi helper sitting beside itself. The launcher symlink resolves back to that
@@ -25,7 +27,19 @@ PREFIX="${PREFIX:-$HOME/.local}"
 LIBDIR="$PREFIX/lib/reside"
 BINDIR="$PREFIX/bin"
 APPDIR="$PREFIX/share/applications"
-ICONDIR="$PREFIX/share/icons/hicolor/512x512/apps"
+HICOLOR="$PREFIX/share/icons/hicolor"
+
+# Where each source icon goes inside the hicolor theme. The DE picks the
+# best-matching size on demand; the SVG covers anything the PNG sizes don't.
+# Format: "<hicolor-subdir>:<source-filename>" — keep both columns aligned with
+# the files staged by build-tarball.sh into the tarball's `icons/` dir.
+ICON_INSTALLS=(
+  "scalable/apps:icon.svg"
+  "32x32/apps:32x32.png"
+  "128x128/apps:128x128.png"
+  "256x256/apps:128x128@2x.png"
+  "512x512/apps:icon.png"
+)
 
 DESKTOP_FILE="$APPDIR/dev.reside.app.desktop"
 LAUNCHER="$BINDIR/reside"
@@ -35,8 +49,14 @@ say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 uninstall() {
   say "Removing ReSide"
   rm -rf "$LIBDIR"
-  rm -f  "$LAUNCHER" "$DESKTOP_FILE" "$ICONDIR/reside.png"
+  rm -f  "$LAUNCHER" "$DESKTOP_FILE"
+  for entry in "${ICON_INSTALLS[@]}"; do
+    subdir="${entry%%:*}"
+    src="${entry##*:}"
+    rm -f "$HICOLOR/$subdir/reside.${src##*.}"
+  done
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
+  command -v gtk-update-icon-cache  >/dev/null 2>&1 && gtk-update-icon-cache  --force --quiet "$HICOLOR" 2>/dev/null || true
   say "Removed. (Your signed apps, credentials, and app data under ~/.local/share/reside were left untouched.)"
   exit 0
 }
@@ -47,15 +67,23 @@ uninstall() {
 for b in reside sideloader netmuxd; do
   [ -f "$SRC_DIR/$b" ] || { printf 'error: missing %s next to this script — is the tarball intact?\n' "$b" >&2; exit 1; }
 done
+[ -d "$SRC_DIR/icons" ] || { printf 'error: missing icons/ next to this script — is the tarball intact?\n' >&2; exit 1; }
 
 say "Installing ReSide into $PREFIX"
-mkdir -p "$LIBDIR" "$BINDIR" "$APPDIR" "$ICONDIR"
+mkdir -p "$LIBDIR" "$BINDIR" "$APPDIR"
 
-install -m 0755 "$SRC_DIR/reside"     "$LIBDIR/reside"
-install -m 0755 "$SRC_DIR/sideloader" "$LIBDIR/sideloader"
-install -m 0755 "$SRC_DIR/netmuxd"    "$LIBDIR/netmuxd"
-install -m 0644 "$SRC_DIR/reside.png" "$LIBDIR/reside.png"
-install -m 0644 "$SRC_DIR/reside.png" "$ICONDIR/reside.png"
+install -m 0755 "$SRC_DIR/reside"          "$LIBDIR/reside"
+install -m 0755 "$SRC_DIR/sideloader"      "$LIBDIR/sideloader"
+install -m 0755 "$SRC_DIR/netmuxd"         "$LIBDIR/netmuxd"
+install -m 0644 "$SRC_DIR/icons/icon.png"  "$LIBDIR/reside.png"
+
+# Icons into the hicolor theme. Each install creates its size subdir if absent.
+for entry in "${ICON_INSTALLS[@]}"; do
+  subdir="${entry%%:*}"
+  src="${entry##*:}"
+  mkdir -p "$HICOLOR/$subdir"
+  install -m 0644 "$SRC_DIR/icons/$src" "$HICOLOR/$subdir/reside.${src##*.}"
+done
 
 ln -sf "$LIBDIR/reside" "$LAUNCHER"
 
@@ -64,7 +92,10 @@ ln -sf "$LIBDIR/reside" "$LAUNCHER"
 sed "s|__EXEC__|$LIBDIR/reside|" "$SRC_DIR/reside.desktop" > "$DESKTOP_FILE"
 chmod 0644 "$DESKTOP_FILE"
 
+# Refresh icon + desktop caches so the menu picks up the new entry + icon
+# immediately, without a re-login. Best-effort: missing tools are not fatal.
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
+command -v gtk-update-icon-cache  >/dev/null 2>&1 && gtk-update-icon-cache  --force --quiet "$HICOLOR" 2>/dev/null || true
 
 say "Installed."
 echo "  Launch from your app menu (\"ReSide\"), or run: reside"

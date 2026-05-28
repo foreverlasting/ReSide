@@ -657,6 +657,25 @@ fn agent_netmuxd_bin() -> Option<std::path::PathBuf> {
 }
 
 pub fn run() {
+    // WebKitGTK rendering workaround for Linux/Wayland. On some setups
+    // (notably CachyOS and other recent Wayland stacks) the WebView dies at
+    // window creation with `Gdk-Message: Error 71 (Protocol error)` unless
+    // these flags are off; the released binary then exits with no visible
+    // error when launched from the app menu. The `tauri:dev` script in
+    // package.json sets the same vars for local development.
+    //
+    // Only set when unset, so advanced users can override on machines where
+    // the optimized renderer works.
+    #[cfg(target_os = "linux")]
+    for (k, v) in [
+        ("WEBKIT_DISABLE_COMPOSITING_MODE", "1"),
+        ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+    ] {
+        if std::env::var_os(k).is_none() {
+            std::env::set_var(k, v);
+        }
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

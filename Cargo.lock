@@ -5947,7 +5947,7 @@ dependencies = [
 
 [[package]]
 name = "reside-agent"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "reside-core",
  "sqlx",
@@ -5958,7 +5958,7 @@ dependencies = [
 
 [[package]]
 name = "reside-app"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "reside-core",
  "serde",
@@ -5978,7 +5978,7 @@ dependencies = [
 
 [[package]]
 name = "reside-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "apple-codesign",
  "apple-dev-apis",

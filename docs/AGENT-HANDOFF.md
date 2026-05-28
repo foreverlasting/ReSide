@@ -24,9 +24,13 @@ Apple's signing stack. Solo dev, open-source GPL-3.0, Arch/CachyOS-first.
 
 **State right now:** functionally complete and hardware-validated. The first
 GitHub Release is **staged but private**: repo `foreverlasting/ReSide` (branch
-`automation-layer` pushed as `main`), a **draft** release `v0.4.0` with the 20 MB
-tarball. Go-live (flip public → publish the Sideloader fork for GPL source →
-un-draft) is **outward-facing: needs the user's explicit go-ahead** — see
+`automation-layer` pushed as `main`), a **v0.4.1 draft** that supersedes the
+never-published v0.4.0 draft. The bump rolled in four hardening fixes after
+v0.4.0's hardware test on KDE Plasma / CachyOS / Wayland: Wayland launch fix
+(#5), pre-public polish (#6), multi-size icon install + system tray (#7),
+catch_unwind around tray init + absolute `Icon=` path for KDE (#8). Go-live
+(flip public → publish the Sideloader fork for GPL source → un-draft) is
+**outward-facing: needs the user's explicit go-ahead** — see
 `packaging/RELEASING.md`.
 
 **Working norms (non-negotiable):**

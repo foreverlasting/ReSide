@@ -4,13 +4,18 @@ Prioritized work for the next agent. Read `docs/ARCHITECTURE.md` first. Each ite
 says **why**, **scope**, **where**, and **done-when**. Do them top-down; don't
 opportunistically scaffold lower items.
 
-## Current state (2026-05-26)
+## Current state (2026-05-28)
 
 Functionally complete and hardware-validated: sign + install over USB **and**
 Wi-Fi, auto-refresh engine + unattended systemd agent, 3-tier credentials, UX
-redesign. The first GitHub Release is **staged**: private repo
-`foreverlasting/ReSide` (branch `automation-layer` pushed as `main`), a **draft**
-release `v0.4.0` with the 20 MB tarball attached. **Not yet public.**
+redesign. Plus a system-tray icon (left-click toggles window, right-click =
+Show / Quit). The first GitHub Release is **staged**: private repo
+`foreverlasting/ReSide` (branch `automation-layer` pushed as `main`),
+**v0.4.1 draft** with hardening fixes after v0.4.0's hardware test on KDE
+Plasma / CachyOS / Wayland exposed four bugs (Wayland launch silently failed,
+KDE menu icon missed, tray init panicked without libappindicator, mock-gallery
+screens read as half-built). All four are landed (PRs #5–8); v0.4.0 draft is
+being superseded, not published. **Not yet public.**
 
 Go-live is the user's call (all outward-facing): flip repo public → publish the
 Sideloader fork public (GPL source obligation; commands in `packaging/RELEASING.md`)

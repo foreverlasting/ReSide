@@ -106,8 +106,15 @@ done
 ln -sf "$LIBDIR/reside" "$LAUNCHER"
 
 # desktop entry: point Exec at the real installed binary so menu launches don't
-# depend on ~/.local/bin being on the session PATH.
-sed "s|__EXEC__|$LIBDIR/reside|" "$SRC_DIR/reside.desktop" > "$DESKTOP_FILE"
+# depend on ~/.local/bin being on the session PATH. Icon= uses an **absolute
+# path** rather than the icon-theme name `reside`, because KDE Plasma's
+# KIconLoader display-time cache doesn't always pick up new themed icons in
+# the user-local hicolor dir even after `kbuildsycoca` rebuild — the menu ends
+# up showing a generic glyph. An absolute path bypasses theme lookup entirely
+# and works on every DE (GNOME, Plasma, XFCE, …).
+sed -e "s|__EXEC__|$LIBDIR/reside|" \
+    -e "s|__ICON__|$HICOLOR/scalable/apps/reside.svg|" \
+    "$SRC_DIR/reside.desktop" > "$DESKTOP_FILE"
 chmod 0644 "$DESKTOP_FILE"
 
 refresh_desktop_caches
@@ -125,6 +132,21 @@ case ":$PATH:" in
      echo "      export PATH=\"$BINDIR:\$PATH\"       # bash/zsh"
      ;;
 esac
+# Tray runtime dep check. The app launches fine without libayatana-appindicator3
+# (lib.rs wraps the tray init in catch_unwind), but the tray icon won't appear.
+# Friendly note + per-distro install command if it's missing.
+if ! ldconfig -p 2>/dev/null | grep -q "libayatana-appindicator3\|libappindicator3"; then
+  echo
+  echo "  Note: libayatana-appindicator3 not found — the system tray icon will be"
+  echo "  disabled. The app launches and the menu/window all work; this only"
+  echo "  affects the tray surface. To enable the tray, install the lib:"
+  if   command -v pacman >/dev/null 2>&1; then echo "      sudo pacman -S libayatana-appindicator"
+  elif command -v dnf    >/dev/null 2>&1; then echo "      sudo dnf install libayatana-appindicator-gtk3"
+  elif command -v apt    >/dev/null 2>&1; then echo "      sudo apt install libayatana-appindicator3-1"
+  else                                         echo "      (search your distro's packages for libayatana-appindicator3)"
+  fi
+fi
+
 echo
 echo "  First sign-in downloads a one-time ~150 MB Apple component and asks for a 2FA code — see README."
 echo "  To remove later:  ~/.local/lib/reside  →  re-run this script with --uninstall, or just delete that folder."

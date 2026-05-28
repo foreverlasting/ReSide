@@ -62,11 +62,13 @@ installing — the helpers sit beside it and are found automatically.
 
 - `usbmuxd` and `libimobiledevice` — talk to the device
 - `webkit2gtk-4.1` and `libnotify` — the app UI and notifications
+- `libayatana-appindicator3` — system tray icon (optional; the app launches
+  fine without it, you just won't see a tray icon)
 
 On Arch / CachyOS:
 
 ```sh
-sudo pacman -S usbmuxd libimobiledevice webkit2gtk-4.1 libnotify
+sudo pacman -S usbmuxd libimobiledevice webkit2gtk-4.1 libnotify libayatana-appindicator
 ```
 
 ### What's in the tarball

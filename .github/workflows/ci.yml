@@ -42,7 +42,7 @@ jobs:
           npm install -g pnpm@10.33.4
           pnpm --version
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Install Rust via rustup so every distro gets the exact toolchain pinned in
       # rust-toolchain.toml (channel + rustfmt + clippy), instead of whatever the

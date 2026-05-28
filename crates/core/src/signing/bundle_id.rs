@@ -2,6 +2,10 @@
 //! extensions/frameworks. Default policy reuses existing IDs to stay under the
 //! weekly App-ID quota. Phase 2.
 //!
+//! ⚠️ **PARKED** — invoked only by the abandoned native-signing pipeline; the
+//! live app delegates bundle-ID handling to the forked Sideloader. See
+//! [`super`] and [`crate::signer`].
+//!
 //! iOS app bundles nest extensions (`.appex`) and frameworks whose own
 //! `CFBundleIdentifier`s are usually children of the main app's ID
 //! (`com.example.app` → `com.example.app.MyExtension`). When the main ID

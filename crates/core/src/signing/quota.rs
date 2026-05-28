@@ -1,5 +1,10 @@
 //! Apple Developer Services quota tracking via `apple_quota_events`.
 //!
+//! ⚠️ **PARKED** — quota tracking belongs to the abandoned native-signing
+//! path (the live app delegates to the forked Sideloader and surfaces Apple's
+//! own throttle errors directly). Kept for reference. See [`super`] and
+//! [`crate::signer`].
+//!
 //! Free Apple IDs are throttled by Apple: at most 10 device registrations and
 //! 10 App ID creations per Apple ID per rolling 7-day window. We mirror those
 //! counts locally so the free-Apple-ID flow can fail fast with an actionable

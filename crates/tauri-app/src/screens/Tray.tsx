@@ -1,3 +1,7 @@
+// Design-preview artboard (gallery-only, mock data: "Delta · 5d 9h left",
+// etc.). There is no live tray popover yet — this is layout for the planned
+// surface. See `Gallery.tsx` / `App.tsx`.
+
 import { Icon, Button, AppTile, StatusDot, cn } from "../components/ui";
 
 type TrayState = "healthy" | "refreshSoon" | "refreshing" | "expired";

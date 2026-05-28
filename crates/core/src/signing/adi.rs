@@ -1,5 +1,10 @@
 //! Local anisette via Apple's ADI libraries.
 //!
+//! ⚠️ **PARKED** — used only by the abandoned native-signing path. The live
+//! app's anisette/ADI provisioning runs inside the forked Sideloader (which
+//! downloads the Apple Music APK at first sign-in). See [`super`] and
+//! [`crate::signer`].
+//!
 //! `omnisette` generates anisette data from Apple's proprietary `libCoreADI.so`
 //! / `libstoreservicescore.so`, loaded and executed at runtime through Dadoum's
 //! `android-loader` (the free-signing path is therefore **not** pure Rust — see

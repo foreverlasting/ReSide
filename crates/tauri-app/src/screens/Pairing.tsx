@@ -1,3 +1,7 @@
+// Design-preview artboard (gallery-only). Imports IPC *types* for shape, but
+// the screen itself is not wired to the backend — the live app does not render
+// it. See `Gallery.tsx` / `App.tsx`.
+
 import { GnomeWindow } from "../components/chrome";
 import { Icon, Button, Badge, Card, CardContent, StatusDot, cn } from "../components/ui";
 import type { CommandError, DeviceInfo, TunnelStatus, WifiAvailability } from "../lib/ipc";

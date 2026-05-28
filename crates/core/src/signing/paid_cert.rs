@@ -2,6 +2,10 @@
 //! from disk. No Apple auth, no ADI libs. Phase 2 (built first — easiest to
 //! test).
 //!
+//! ⚠️ **PARKED** — part of the abandoned native-signing path. The live app
+//! drives the forked Sideloader CLI; this provider is unused. Kept for
+//! reference. See [`super`] (signing/mod.rs) and [`crate::signer`].
+//!
 //! A `.p12`/PFX holds the developer certificate and its private key. A
 //! `.mobileprovision` is a CMS (PKCS#7 SignedData) envelope wrapping an XML
 //! plist that lists the authorized entitlements, team, and devices. This

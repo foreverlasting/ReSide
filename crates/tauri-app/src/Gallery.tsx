@@ -1,6 +1,16 @@
 // Design gallery: a screen-picker harness that renders every artboard at its
-// design size with mock data. Shown when running in a plain browser
-// (`pnpm dev`); the live app (`Tauri`) renders ReSideApp instead.
+// design size with **mock data** (hardcoded apps named "Delta", "Maya's iPhone",
+// fixed progress percentages, etc.). It is a layout/visual review tool, not a
+// running app — Gallery.tsx itself never imports the IPC layer or touches the
+// Rust backend.
+//
+// Shown when running in a plain browser (`pnpm dev`); the live app (`Tauri`)
+// renders ReSideApp instead, which uses the wired-to-Rust modal counterparts
+// (`ImportModal`, `RefreshModal`, `Settings`) rather than these artboards.
+//
+// Four screens here are gallery-only (`Pairing`, `Import`, `Install`, `Tray`);
+// `Setup` and `Dashboard` are dual-purpose (Gallery passes mock props; the live
+// app passes real data).
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Setup } from "./screens/Setup";
@@ -78,7 +88,7 @@ export function Gallery() {
           </div>
           <div>
             <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
-            <div className="text-[10.5px] text-slate-500">Design gallery · 6 flows</div>
+            <div className="text-[10.5px] text-slate-500">Design preview · mock data</div>
           </div>
         </div>
 

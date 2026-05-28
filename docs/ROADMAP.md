@@ -9,17 +9,25 @@ opportunistically scaffold lower items.
 Functionally complete and hardware-validated: sign + install over USB **and**
 Wi-Fi, auto-refresh engine + unattended systemd agent, 3-tier credentials, UX
 redesign. Plus a system-tray icon (left-click toggles window, right-click =
-Show / Quit). The first GitHub Release is **staged**: private repo
-`foreverlasting/ReSide` (branch `automation-layer` pushed as `main`),
-**v0.4.1 draft** with hardening fixes after v0.4.0's hardware test on KDE
-Plasma / CachyOS / Wayland exposed four bugs (Wayland launch silently failed,
-KDE menu icon missed, tray init panicked without libappindicator, mock-gallery
-screens read as half-built). All four are landed (PRs #5–8); v0.4.0 draft is
-being superseded, not published. **Not yet public.**
+Show / Quit).
 
-Go-live is the user's call (all outward-facing): flip repo public → publish the
-Sideloader fork public (GPL source obligation; commands in `packaging/RELEASING.md`)
-→ un-draft the release. Do not do these without explicit go-ahead.
+**Public as of 2026-05-28.** The three go-live steps are done:
+
+1. `foreverlasting/ReSide` is public.
+2. `foreverlasting/Sideloader` (the patched signer fork — branch
+   `reside-automation`, two patches: non-interactive login + TLS-verify) is
+   public, satisfying GPL-3.0 source obligation for the signer binary the
+   tarball ships.
+3. **v0.4.1 release is published** at
+   <https://github.com/foreverlasting/ReSide/releases/tag/v0.4.1> with
+   `ReSide-0.4.1-linux-x86_64.tar.gz` (sha256
+   `6312a2dfa81029b0f220235f7f984efc798e58e2bf54a6231875e1934f70bf57`).
+
+v0.4.1 supersedes a never-published v0.4.0 draft. Hardware testing on KDE
+Plasma 6 / CachyOS / Wayland exposed four bugs in v0.4.0 (Wayland launch
+silently failed, KDE menu icon missed, tray init panicked without
+libappindicator, mock-gallery screens read as half-built); all fixed in
+PRs #5–#8, version bump in #9.
 
 ## 1. Certificate management + credential settings UI  ← start here
 

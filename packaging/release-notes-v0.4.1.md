@@ -64,7 +64,7 @@ Older 17.x may work but is untested.
 
 ```sh
 sha256sum ReSide-0.4.1-linux-x86_64.tar.gz
-# (sha printed by build-tarball.sh after build)
+# 6312a2dfa81029b0f220235f7f984efc798e58e2bf54a6231875e1934f70bf57
 ```
 
 ## What's inside / source

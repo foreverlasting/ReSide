@@ -8,3 +8,4 @@ pub mod mdns_discovery;
 pub mod muxer;
 pub mod remote_xpc;
 pub mod tunneld;
+pub mod wifi_cache;

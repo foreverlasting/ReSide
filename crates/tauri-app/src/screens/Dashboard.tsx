@@ -67,6 +67,7 @@ export function Dashboard({
   agentError,
   onToggleAgent,
   getStarted,
+  sidebarNoDeviceFallback,
 }: {
   dark?: boolean;
   empty?: boolean;
@@ -85,6 +86,9 @@ export function Dashboard({
   agentError?: string | null;
   onToggleAgent?: (enabled: boolean) => void;
   getStarted?: GetStartedHandlers;
+  /** Replaces the Sidebar's "No devices paired" hint with a richer Wi-Fi
+   *  banner + "Connect over Wi-Fi" button. ReSideApp owns the wifi state. */
+  sidebarNoDeviceFallback?: ReactNode;
 }) {
   const hasApps = live ? apps.length > 0 : !empty;
   const hasDevice = !!device;
@@ -155,6 +159,7 @@ export function Dashboard({
             agentActive={agentEnabled}
             agentDetail={agentDetail}
             onNavigate={onNavigate}
+            noDeviceFallback={sidebarNoDeviceFallback}
           />
         ) : (
           <Sidebar active="apps" deviceConnected={!empty} />

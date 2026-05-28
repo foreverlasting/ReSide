@@ -99,6 +99,7 @@ export const Sidebar = ({
   agentActive = true,
   agentDetail,
   onNavigate,
+  noDeviceFallback,
 }: {
   active?: string;
   deviceConnected?: boolean;
@@ -106,6 +107,10 @@ export const Sidebar = ({
   agentActive?: boolean;
   agentDetail?: string;
   onNavigate?: (id: string) => void;
+  /** Optional replacement for the live-mode "No devices paired" empty state.
+   *  Used to surface Wi-Fi reachability + a "Connect over Wi-Fi" button while
+   *  the cabled rail is empty. Falls back to the standard hint when omitted. */
+  noDeviceFallback?: ReactNode;
 }) => {
   // `device === undefined` means gallery mode; otherwise we're live.
   const live = device !== undefined;
@@ -180,6 +185,10 @@ export const Sidebar = ({
                   {device.wifi ? "Wi-Fi" : device.connection.toUpperCase()}
                 </span>
               </div>
+            </div>
+          ) : noDeviceFallback ? (
+            <div className="rounded-md border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
+              {noDeviceFallback}
             </div>
           ) : (
             <div className="rounded-md border border-dashed border-slate-300 p-2.5 text-[11.5px] text-slate-500 dark:border-slate-700">

@@ -43,19 +43,52 @@ pub struct DeviceInfo {
     pub supported: bool,
 }
 
-/// Enumerate all devices known to usbmuxd (USB + network) and read basic info.
+/// Enumerate devices visible to ReSide and read basic info for each.
+///
+/// Returns USB devices from the system `usbmuxd` merged with any Wi-Fi devices
+/// the on-demand bridge resolved earlier this session (stored in
+/// [`crate::transport::wifi_cache`]). USB wins when the same UDID appears on
+/// both sides — a phone plugged in mid-session should never render twice. The
+/// cache exists because the Wi-Fi bridge (`transport::muxer`) is deliberately
+/// torn down after each use, so without it Wi-Fi cards would vanish.
 pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
-    let mut conn = UsbmuxdConnection::default().await.map_err(|e| {
-        tracing::warn!(error = %e, "could not connect to usbmuxd");
+    // USB door: the unix socket, ignoring `USBMUXD_SOCKET_ADDRESS` so a stray
+    // env var from a concurrent Wi-Fi install can never redirect us. On Linux
+    // `usbmuxd` is **udev-activated** — it EXITS when no cable is attached, so
+    // a connect failure here is the normal "nothing on USB" state, not an
+    // error. Degrade to an empty list and keep going; the Wi-Fi cache below
+    // still gets to surface a resolved device.
+    let mut out = match enumerate_devices_at(UsbmuxdAddr::default()).await {
+        Ok(list) => list,
+        Err(e) => {
+            tracing::debug!(error = %e, "usbmuxd unavailable; treating as no-USB-devices");
+            Vec::new()
+        }
+    };
+
+    // Wi-Fi door: in-memory snapshot of whatever a prior `resolve_wifi_devices`
+    // populated. No bridge process is running right now; this is pure data.
+    for cached in crate::transport::wifi_cache::get().await {
+        if !out.iter().any(|d| d.udid == cached.udid) {
+            out.push(cached);
+        }
+    }
+    Ok(out)
+}
+
+/// Enumerate devices visible through a specific muxer (the system unix socket
+/// for USB, netmuxd's TCP socket for Wi-Fi). Reused by `list_devices` and by
+/// the Wi-Fi resolve path in `transport::muxer`.
+pub async fn enumerate_devices_at(addr: UsbmuxdAddr) -> Result<Vec<DeviceInfo>> {
+    let mut conn = addr.connect(0).await.map_err(|e| {
+        tracing::warn!(error = %e, ?addr, "could not connect to muxer");
         AppError::UsbmuxdDown
     })?;
 
     let devices = conn.get_devices().await.map_err(|e| {
-        tracing::warn!(error = %e, "usbmuxd get_devices failed");
+        tracing::warn!(error = %e, ?addr, "muxer get_devices failed");
         AppError::UsbmuxdDown
     })?;
-
-    let addr = UsbmuxdAddr::from_env_var().unwrap_or_default();
 
     let mut out = Vec::with_capacity(devices.len());
     for d in devices {
@@ -325,6 +358,45 @@ mod tests {
         assert!(!is_supported_version("17.3.1"));
         assert!(!is_supported_version("16.7"));
         assert!(!is_supported_version("15.0"));
+    }
+
+    fn fake_device(udid: &str, wifi: bool) -> DeviceInfo {
+        DeviceInfo {
+            udid: udid.to_string(),
+            name: Some(format!("Phone {udid}")),
+            ios_version: Some("17.4".into()),
+            product_type: Some("iPhone14,5".into()),
+            connection: if wifi { "network".into() } else { "usb".into() },
+            wifi,
+            supported: true,
+        }
+    }
+
+    /// The merge in `list_devices` must keep the USB entry when the same UDID
+    /// appears in both lists — the same physical phone should never render
+    /// twice if it's both plugged in and on Wi-Fi.
+    #[tokio::test]
+    async fn wifi_cache_does_not_double_render_a_usb_device() {
+        crate::transport::wifi_cache::set(vec![fake_device("AAA", true), fake_device("CCC", true)])
+            .await;
+
+        // Pretend we got AAA on USB and the cache also has it on Wi-Fi.
+        let usb = vec![fake_device("AAA", false), fake_device("BBB", false)];
+        let mut out = usb;
+        for cached in crate::transport::wifi_cache::get().await {
+            if !out.iter().any(|d| d.udid == cached.udid) {
+                out.push(cached);
+            }
+        }
+
+        assert_eq!(out.len(), 3, "AAA must not appear twice");
+        // The USB row for AAA wins (wifi flag false).
+        assert!(!out.iter().find(|d| d.udid == "AAA").unwrap().wifi);
+        // CCC came from the cache, BBB from USB — both still present.
+        assert!(out.iter().any(|d| d.udid == "BBB"));
+        assert!(out.iter().any(|d| d.udid == "CCC"));
+
+        crate::transport::wifi_cache::clear().await;
     }
 
     #[test]

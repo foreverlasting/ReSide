@@ -181,6 +181,83 @@ async fn wait_for_device(addr: &UsbmuxdAddr, udid: &str) -> bool {
     }
 }
 
+/// Bring up netmuxd just long enough to enumerate every Wi-Fi device it can
+/// discover, populate the [`crate::transport::wifi_cache`] with their full
+/// `DeviceInfo` records, then shut netmuxd back down.
+///
+/// This is the engine behind the Dashboard rail's "Connect over Wi-Fi" button.
+/// It respects the on-demand contract this module is built around: no netmuxd
+/// is left running afterwards. The resolved cards stay visible in the rail
+/// because [`crate::device::list_devices`] merges in the cache; a subsequent
+/// install or refresh routes through [`route_to`] as usual, which will
+/// re-spawn netmuxd on its own.
+///
+/// Cold mDNS discovery measured ~38s on hardware — surface that cost in the
+/// UI rather than hiding it. Network-dependent: validates only on hardware.
+pub async fn resolve_wifi_devices() -> Result<Vec<crate::device::DeviceInfo>> {
+    let wifi = netmuxd_addr();
+    tracing::info!("Wi-Fi resolve: bringing netmuxd up on demand");
+
+    // Reuse an already-listening netmuxd (ours from earlier or external);
+    // otherwise spawn one we own.
+    ensure_netmuxd().await?;
+
+    // Wait for the mDNS browse to populate at least one device. Without this
+    // we'd commonly enumerate an empty muxer right after spawn and return [].
+    let discovered = wait_for_any_device(&wifi).await;
+    tracing::info!(discovered, "Wi-Fi resolve: discovery window finished");
+
+    let devices = if discovered {
+        match crate::device::enumerate_devices_at(wifi).await {
+            Ok(list) => {
+                tracing::info!(count = list.len(), "Wi-Fi resolve: enumerated devices");
+                list
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Wi-Fi resolve: enumeration failed");
+                Vec::new()
+            }
+        }
+    } else {
+        tracing::info!("Wi-Fi resolve: netmuxd never saw a device within discovery window");
+        Vec::new()
+    };
+
+    // Cache BEFORE shutdown — the cache outlives the bridge by design.
+    crate::transport::wifi_cache::set(devices.clone()).await;
+    tracing::info!(
+        cached = devices.len(),
+        "Wi-Fi resolve: cache populated; tearing netmuxd down"
+    );
+
+    // Honour on-demand: tear netmuxd down. The next install/refresh will
+    // pay the cold-discovery cost again via `route_to`, which is the price
+    // of not running a standing background process.
+    shutdown().await;
+
+    Ok(devices)
+}
+
+/// Poll the muxer for any device at all. Used by the resolve path, which
+/// doesn't yet know a UDID to look for — anything is enough to know mDNS has
+/// caught up.
+async fn wait_for_any_device(addr: &UsbmuxdAddr) -> bool {
+    let deadline = tokio::time::Instant::now() + DISCOVERY_TIMEOUT;
+    loop {
+        if let Ok(mut conn) = addr.connect(0).await {
+            if let Ok(devices) = conn.get_devices().await {
+                if !devices.is_empty() {
+                    return true;
+                }
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
+}
+
 /// Stop the netmuxd this process started, if any. Idempotent and safe to call
 /// when none is running. The app calls this on exit; the agent after each sweep,
 /// so an on-demand bridge never lingers past the work that needed it.

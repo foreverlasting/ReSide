@@ -193,6 +193,9 @@ export const api = {
   pairDevice: (udid: string) => invoke<void>("pair_device", { udid }),
   developerModeStatus: (udid: string) => invoke<boolean>("developer_mode_status", { udid }),
   checkWifiAvailability: () => invoke<WifiAvailability>("check_wifi_availability"),
+  /** Bring netmuxd up on demand, enumerate Wi-Fi-reachable devices, cache them
+   *  for the session, tear netmuxd down. ~38s cold. */
+  resolveWifiDevices: () => invoke<DeviceInfo[]>("resolve_wifi_devices"),
   getActivityLog: () => invoke<ActivityRow[]>("get_activity_log"),
   // Sign / install (task 11b).
   pickIpa: () => invoke<string | null>("pick_ipa"),

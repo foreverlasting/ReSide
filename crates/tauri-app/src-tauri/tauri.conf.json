@@ -30,7 +30,7 @@
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png"],
     "linux": {
       "deb": {
-        "depends": ["usbmuxd", "libimobiledevice", "webkit2gtk-4.1", "libnotify"]
+        "depends": ["usbmuxd", "libimobiledevice", "webkit2gtk-4.1", "libnotify", "libayatana-appindicator3-1"]
       }
     }
   }

@@ -160,6 +160,16 @@ async fn check_wifi_availability(
     Ok(reside_core::transport::mdns_discovery::check_wifi_availability().await?)
 }
 
+/// Resolve every Wi-Fi-reachable iOS device to a full `DeviceInfo` card and
+/// cache the result for the rest of this session. Spins netmuxd up on demand,
+/// waits for mDNS discovery (~38s cold), then tears netmuxd back down — the
+/// "no standing process" contract is preserved. Subsequent `list_devices`
+/// calls will merge these in alongside USB. Network-dependent.
+#[tauri::command]
+async fn resolve_wifi_devices() -> CmdResult<Vec<reside_core::device::DeviceInfo>> {
+    Ok(reside_core::transport::muxer::resolve_wifi_devices().await?)
+}
+
 #[derive(serde::Serialize, sqlx::FromRow)]
 pub struct ActivityRow {
     ts: i64,
@@ -825,6 +835,7 @@ pub fn run() {
             pair_device,
             developer_mode_status,
             check_wifi_availability,
+            resolve_wifi_devices,
             get_activity_log,
             pick_ipa,
             is_signed_in,

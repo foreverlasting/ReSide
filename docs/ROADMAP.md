@@ -67,30 +67,42 @@ sign again; can switch Apple IDs without editing files. Validate on hardware.
   list; revoke one → it disappears and a subsequent sign works; force the cap to
   confirm the install-modal auto-prompt appears and lands on Settings.
 
-## 2. Pre-public polish (cheap; do before strangers arrive)
+## 2. Pre-public polish — **DONE 2026-05-28**
 
-- **`mdns_sd` ERROR log noise** — a benign shutdown race logs at ERROR. Downgrade
-  to debug/warn in `transport/mdns_discovery.rs` so logs don't cry wolf.
-- **Mock gallery screens** — `Gallery.tsx`/`Import.tsx`/`Install.tsx`/`Tray.tsx`
-  render placeholder data (browser-only via `isTauri()`). Decide: label as
-  previews or strip. Shipping fake data in a public repo reads as half-built.
-- **Code-doc pass for live-vs-parked** — `lib.rs` and `signing/mod.rs` docs were
-  corrected as examples; finish marking the rest of `signing/*` and
-  `setup/adi_provision.rs` as PARKED/superseded so the next reader isn't misled.
-- **iOS minimum claim** — README says 17.4+; verify or soften before users test
-  on older devices.
-- **Stale `icons/icon.ico`** — old icon, Windows-only, harmless on Linux; replace
-  or drop the loose end.
+All five bullets shipped (absorbed into the v0.4.1 hardening PRs #5–#8 and
+follow-ups). Verified against current code 2026-05-28:
 
-## 3. Wi-Fi devices in the Devices rail
+- **`mdns_sd` ERROR log noise** — no `tracing::error!` left in
+  `transport/mdns_discovery.rs`; only the legitimate `warn!` on a failed browse.
+- **Mock gallery screens** — `App.tsx` gates `<Gallery />` to non-Tauri runs
+  (`pnpm dev` in a plain browser); live users only ever see `<ReSideApp />`.
+  Gallery pages carry an on-screen "Design preview · mock data" label.
+- **Code-doc pass for live-vs-parked** — every file under `signing/` plus
+  `setup/adi_provision.rs` opens with a `⚠️ **PARKED**` header pointing the
+  reader at `signer.rs` as the live path.
+- **iOS minimum claim** — README softened to "Recommended: iOS / iPadOS 17.4
+  or newer" with an explicit "iOS 17.0–17.3 may work but is…" hedge.
+- **Stale `icons/icon.ico`** — file removed; `icons/` is png + svg only.
 
-**Why:** Wi-Fi is the headline feature, but the Devices rail lists USB only — the
-thing you're proudest of is invisible. Analysis + approaches A/B/C/D were drafted
-earlier (the gap was deferred, nothing built).
+## 3. Wi-Fi devices in the Devices rail — **DONE 2026-05-28**
 
-**Scope/where:** surface mDNS-discovered Wi-Fi devices (`transport/mdns_discovery.rs`)
-into the device list the front end renders. **Done when:** a paired device on
-Wi-Fi shows in the rail with correct status.
+**Why:** Wi-Fi is the headline feature, but the Devices rail listed USB only —
+the thing you're proudest of was invisible.
+
+**Approach:** C (hybrid). With the cable out, a soft "an iPhone is reachable
+over Wi-Fi" banner appears in the rail's empty state (the existing 3-second
+mDNS scan in `transport/mdns_discovery.rs`, now polled passively); a "Connect
+over Wi-Fi" button spins netmuxd up on demand via the new
+`transport::muxer::resolve_wifi_devices`, reads the device's name + iOS
+version through it, caches the resolved `DeviceInfo` in a session-only
+`transport::wifi_cache`, then tears netmuxd down. `device::list_devices`
+merges USB ∪ Wi-Fi cache (USB wins on UDID conflicts). Hardware-validated;
+the **on-demand teardown** the Wi-Fi-install slice depends on is preserved.
+
+**Gotcha worth re-reading:** Linux `usbmuxd` is udev-activated and *exits*
+when no cable is attached; `device::list_devices` therefore treats a
+connection failure as "no USB devices" rather than fatal, so the Wi-Fi
+cache can still surface a resolved card. Don't regress that.
 
 ## 4. AUR packaging
 

@@ -6,7 +6,7 @@
 // toggle) is injected into the titlebar; detected devices into the sidebar.
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
 import { Dashboard } from "./screens/Dashboard";
@@ -19,7 +19,14 @@ import {
   type TunnelPhase,
   type WifiPhase,
 } from "./screens/Pairing";
-import { api, asCommandError, isTauri, type DeviceInfo, type InstalledApp } from "./lib/ipc";
+import {
+  api,
+  asCommandError,
+  isTauri,
+  type CommandError,
+  type DeviceInfo,
+  type InstalledApp,
+} from "./lib/ipc";
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
@@ -33,6 +40,7 @@ export function ReSideApp() {
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [refreshTarget, setRefreshTarget] = useState<InstalledApp | null>(null);
+  const queryClient = useQueryClient();
 
   const setup = useQuery({ queryKey: ["setup-check"], queryFn: api.runSetupCheck });
   const tunnel = useQuery({ queryKey: ["tunnel-status"], queryFn: api.getTunnelStatus });
@@ -129,6 +137,30 @@ export function ReSideApp() {
     mutationFn: () => api.checkWifiAvailability(),
   });
 
+  // A passive Wi-Fi-reachability ping for the Dashboard rail. Runs ONLY when
+  // the USB list is empty (so we don't bother the network when a cable is in)
+  // and re-checks every 30s so a phone that joins the LAN becomes visible
+  // without the user clicking anything. Independent from the manual `wifiCheck`
+  // the Pairing screen uses.
+  const wifiRailCheck = useQuery({
+    queryKey: ["wifi-rail-check"],
+    queryFn: api.checkWifiAvailability,
+    enabled: isTauri() && !devices.isLoading && deviceList.length === 0,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
+  });
+
+  // "Connect over Wi-Fi": spin netmuxd up, resolve the full named card, cache
+  // it for the session, tear netmuxd down. Cold path is ~38s.
+  const resolveWifi = useMutation({
+    mutationFn: () => api.resolveWifiDevices(),
+    onSuccess: () => {
+      // The cache merge happens in `list_devices`; pull a fresh copy so the
+      // rail picks the new card up.
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+    },
+  });
+
   const wifiPhase: WifiPhase = wifiCheck.isPending
     ? "checking"
     : wifiCheck.isSuccess
@@ -192,6 +224,12 @@ export function ReSideApp() {
               error={devices.error}
               selectedUdid={target?.udid}
               onSelect={setSelectedUdid}
+              wifiReachable={wifiRailCheck.data?.available ?? false}
+              wifiChecking={wifiRailCheck.isFetching}
+              resolving={resolveWifi.isPending}
+              resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
+              onConnectWifi={() => resolveWifi.mutate()}
+              onRescanWifi={() => wifiRailCheck.refetch()}
             />
           }
         />
@@ -206,6 +244,12 @@ export function ReSideApp() {
               error={devices.error}
               selectedUdid={target?.udid}
               onSelect={setSelectedUdid}
+              wifiReachable={wifiRailCheck.data?.available ?? false}
+              wifiChecking={wifiRailCheck.isFetching}
+              resolving={resolveWifi.isPending}
+              resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
+              onConnectWifi={() => resolveWifi.mutate()}
+              onRescanWifi={() => wifiRailCheck.refetch()}
             />
           }
         />
@@ -242,6 +286,16 @@ export function ReSideApp() {
             onRefreshApp={(app) => setRefreshTarget(app)}
             onRefreshAll={() => refreshAll.mutate()}
             refreshingAll={refreshAll.isPending}
+            sidebarNoDeviceFallback={
+              <WifiEmptyState
+                wifiReachable={wifiRailCheck.data?.available ?? false}
+                wifiChecking={wifiRailCheck.isFetching}
+                resolving={resolveWifi.isPending}
+                resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
+                onConnectWifi={() => resolveWifi.mutate()}
+                onRescanWifi={() => wifiRailCheck.refetch()}
+              />
+            }
             agentEnabled={agent.data?.enabled ?? false}
             agentDetail={agent.data?.detail}
             agentBusy={setAgent.isPending}
@@ -330,11 +384,28 @@ function DevicesRail({
   error,
   selectedUdid,
   onSelect,
+  wifiReachable = false,
+  wifiChecking = false,
+  resolving = false,
+  resolveError = null,
+  onConnectWifi,
+  onRescanWifi,
 }: {
   devices: DeviceInfo[];
   error: unknown;
   selectedUdid?: string;
   onSelect: (udid: string) => void;
+  /** mDNS just spotted an iOS device on the LAN — we don't know its name yet. */
+  wifiReachable?: boolean;
+  /** A passive reachability check is in flight (the soft 3s mDNS poll). */
+  wifiChecking?: boolean;
+  /** "Connect over Wi-Fi" is currently spinning netmuxd up + waiting on discovery. */
+  resolving?: boolean;
+  resolveError?: CommandError | null;
+  /** Click handler for the "Connect over Wi-Fi" button. */
+  onConnectWifi?: () => void;
+  /** Optional manual rescan of the mDNS reachability check. */
+  onRescanWifi?: () => void;
 }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -346,9 +417,15 @@ function DevicesRail({
         </span>
       </div>
       {devices.length === 0 ? (
-        <div className="text-[11.5px] text-slate-500">
-          {error ? asCommandError(error).remediation : "Plug in your iPhone over USB."}
-        </div>
+        <WifiEmptyState
+          error={error}
+          wifiReachable={wifiReachable}
+          wifiChecking={wifiChecking}
+          resolving={resolving}
+          resolveError={resolveError}
+          onConnectWifi={onConnectWifi}
+          onRescanWifi={onRescanWifi}
+        />
       ) : (
         <div className="space-y-1.5">
           {devices.map((d) => (
@@ -381,6 +458,89 @@ function DevicesRail({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/// Empty-state body for any device list (DevicesRail and the Sidebar's
+/// Devices card share this). Three branches:
+///
+/// 1. The mDNS reachability ping found *something* on the LAN → soft banner
+///    plus a "Connect over Wi-Fi" button that drives the resolve mutation.
+/// 2. The resolve is in flight → spinner + "Locating your iPhone over
+///    Wi-Fi… (~40s)" so the long cold-discovery wait isn't a silent void.
+/// 3. Nothing reachable → the original "Plug in your iPhone over USB." hint.
+export function WifiEmptyState({
+  error,
+  wifiReachable,
+  wifiChecking,
+  resolving,
+  resolveError,
+  onConnectWifi,
+  onRescanWifi,
+}: {
+  error?: unknown;
+  wifiReachable: boolean;
+  wifiChecking: boolean;
+  resolving: boolean;
+  resolveError: CommandError | null;
+  onConnectWifi?: () => void;
+  onRescanWifi?: () => void;
+}) {
+  if (error) {
+    return (
+      <div className="text-[11.5px] text-slate-500">{asCommandError(error).remediation}</div>
+    );
+  }
+
+  if (resolving) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-[11.5px] text-slate-600 dark:text-slate-300">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-200" />
+          Locating your iPhone over Wi-Fi…
+        </div>
+        <div className="text-[10.5px] text-slate-500">
+          First connection takes about 40 seconds.
+        </div>
+      </div>
+    );
+  }
+
+  if (wifiReachable) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11.5px] text-slate-600 dark:text-slate-300">
+          An iPhone is reachable over Wi-Fi.
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={onConnectWifi}
+            disabled={!onConnectWifi}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Icon name="wifi" size={11} />
+            Connect over Wi-Fi
+          </button>
+          {onRescanWifi && (
+            <button
+              onClick={onRescanWifi}
+              className="rounded-md px-1.5 py-1 text-[10.5px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Rescan
+            </button>
+          )}
+        </div>
+        {resolveError && (
+          <div className="text-[10.5px] text-red-500">{resolveError.remediation}</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-[11.5px] text-slate-500">
+      {wifiChecking ? "Looking for iPhones on Wi-Fi…" : "Plug in your iPhone over USB."}
     </div>
   );
 }

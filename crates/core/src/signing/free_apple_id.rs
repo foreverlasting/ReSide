@@ -1,5 +1,9 @@
 //! Free Apple ID credential flow.
 //!
+//! ⚠️ **PARKED** — the abandoned native-signing path. The live app drives the
+//! forked Sideloader CLI for the full free-Apple-ID flow (auth + signing). See
+//! [`super`] (signing/mod.rs) and [`crate::signer`].
+//!
 //! **Scope note (2026-05-23): AUTHENTICATION half only.** The plan's full flow is
 //! steps 0–8 (anisette → GSA login → 2FA → CSR → cert → device register → App ID
 //! → provisioning profile → sign). Steps 3–7 — the Apple Developer Services half

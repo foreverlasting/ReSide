@@ -1,6 +1,10 @@
 //! Per-method entitlements filter (free Apple ID strips push, iCloud, IAP,
 //! Associated Domains, …; paid cert preserves). Phase 2.
 //!
+//! ⚠️ **PARKED** — used by the abandoned native-signing pipeline; the live
+//! app's signer handles entitlements through the fork. See [`super`] and
+//! [`crate::signer`].
+//!
 //! Free-tier Apple IDs cannot be granted most "premium" capabilities. If a
 //! re-signed app keeps an entitlement the free certificate is not provisioned
 //! for, installation is rejected. So on the free path we strip those keys; on

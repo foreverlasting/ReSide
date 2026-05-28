@@ -2,6 +2,11 @@
 //! bundles; IPA wrapping (zip, alignment, symlink preservation) is ours.
 //! Phase 2.
 //!
+//! ⚠️ **PARKED** — part of the abandoned native-signing path. The live app
+//! drives the forked Sideloader CLI for signing; nothing in `reside-app`
+//! calls this pipeline. Kept for reference / the `native-signing-path` branch.
+//! See [`super`] (signing/mod.rs) and [`crate::signer`] for the live path.
+//!
 //! Flow ([`sign_ipa`]):
 //! 1. Extract the `.ipa` (a zip) to a scratch dir, preserving symlinks + modes.
 //! 2. Locate `Payload/<Name>.app` and read its `Info.plist`.

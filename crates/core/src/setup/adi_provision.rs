@@ -1,5 +1,10 @@
 //! One-time ADI library provisioning.
 //!
+//! ⚠️ **PARKED — superseded.** Nothing in `reside-app` calls this module: the
+//! live app delegates ADI provisioning to the forked Sideloader, which fetches
+//! the Apple Music APK from Apple's CDN at first sign-in. Kept for reference /
+//! the `native-signing-path` branch. See [`crate::signer`].
+//!
 //! Generating anisette data locally requires two of Apple's proprietary native
 //! libraries — `libstoreservicescore.so` and `libCoreADI.so` — which ship inside
 //! the Apple Music **Android** APK. They are **non-redistributable**: ReSide must

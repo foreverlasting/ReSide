@@ -1,3 +1,8 @@
+// Design-preview artboard (gallery-only, mock data: hardcoded stages,
+// percentages, file sizes). Install progress in the live app is rendered by
+// `screens/ImportModal.tsx` / `screens/RefreshModal.tsx` reading the real
+// operation-event stream. See `Gallery.tsx` / `App.tsx`.
+
 import { GnomeWindow } from "../components/chrome";
 import { Icon, Button, Badge, Progress, AppTile, StatusDot, cn } from "../components/ui";
 

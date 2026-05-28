@@ -678,8 +678,12 @@ pub fn run() {
 
     tracing_subscriber::fmt()
         .with_env_filter(
+            // Default to info, but quiet `mdns_sd` to warn: its background
+            // browse threads emit a benign ERROR during shutdown (a "channel
+            // closed" race against our `daemon.shutdown()`) that looks alarming
+            // in logs but is not actionable. Real mdns warns still show through.
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,mdns_sd=warn")),
         )
         .init();
 

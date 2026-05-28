@@ -1,3 +1,6 @@
+// Design-preview artboard (gallery-only, mock data). The live import flow uses
+// `screens/ImportModal.tsx`. See `Gallery.tsx` / `App.tsx`.
+
 import { GnomeWindow, Sidebar } from "../components/chrome";
 import { Icon, Button, Badge, Card, CardContent, Input, Label, Checkbox, AppTile, StatusDot, cn, type IconName } from "../components/ui";
 

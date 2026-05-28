@@ -16,8 +16,10 @@ things those tools leave to you:
 - **Reliable signing** — driven through a single, validated signer with a
   one-click "Refresh now" recovery when Apple throttles.
 
-> **Requires iOS / iPadOS 17.4 or newer.** ReSide uses the modern RemoteXPC /
-> RSD transport; it does not support older lockdown-only devices.
+> **Recommended: iOS / iPadOS 17.4 or newer** (the version validated on
+> hardware). ReSide uses the modern RemoteXPC / RSD transport, so older
+> lockdown-only devices are not supported; iOS 17.0–17.3 may work but is
+> untested.
 
 ## Before you start — three things to expect
 

@@ -735,65 +735,82 @@ pub fn run() {
 
             // Minimal system tray: an icon in the status area that toggles the
             // main window on left-click, with a right-click menu offering Show
-            // / Quit. Build failures (e.g. on Linux without
-            // libayatana-appindicator3) log a warning and continue — the app
-            // stays usable, just without a tray.
+            // / Quit. Wrapped in `catch_unwind` because the underlying
+            // `libappindicator-sys` crate **panics** (not returns Err) when
+            // libayatana-appindicator3 isn't present at runtime — a normal `?`
+            // on the builder result wouldn't catch it. Without this guard a
+            // missing tray lib would abort the whole app at startup. On
+            // Arch/CachyOS the lib is in the `libayatana-appindicator` package;
+            // when absent we log a warning and the app keeps running, no tray.
             {
                 use tauri::menu::{Menu, MenuItem};
                 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-                let tray_result = (|| -> tauri::Result<()> {
-                    let show =
-                        MenuItem::with_id(app, "tray_show", "Show ReSide", true, None::<&str>)?;
-                    let quit = MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
-                    let menu = Menu::with_items(app, &[&show, &quit])?;
-                    TrayIconBuilder::with_id("main")
-                        .icon(
-                            app.default_window_icon()
-                                .expect("default window icon (configured in tauri.conf.json)")
-                                .clone(),
-                        )
-                        .menu(&menu)
-                        .show_menu_on_left_click(false)
-                        .on_menu_event(|app, event| match event.id.as_ref() {
-                            "tray_show" => {
-                                if let Some(w) = app.get_webview_window("main") {
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
+                let tray_outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let show = MenuItem::with_id(
+                            app, "tray_show", "Show ReSide", true, None::<&str>,
+                        )?;
+                        let quit = MenuItem::with_id(
+                            app, "tray_quit", "Quit", true, None::<&str>,
+                        )?;
+                        let menu = Menu::with_items(app, &[&show, &quit])?;
+                        TrayIconBuilder::with_id("main")
+                            .icon(
+                                app.default_window_icon()
+                                    .expect("default window icon (configured in tauri.conf.json)")
+                                    .clone(),
+                            )
+                            .menu(&menu)
+                            .show_menu_on_left_click(false)
+                            .on_menu_event(|app, event| match event.id.as_ref() {
+                                "tray_show" => {
+                                    if let Some(w) = app.get_webview_window("main") {
+                                        let _ = w.show();
+                                        let _ = w.set_focus();
+                                    }
                                 }
-                            }
-                            "tray_quit" => app.exit(0),
-                            _ => {}
-                        })
-                        .on_tray_icon_event(|tray, event| {
-                            // Left-click toggles window visibility. Right-click
-                            // opens the menu (Tauri handles that by default
-                            // because `show_menu_on_left_click(false)`).
-                            if let TrayIconEvent::Click {
-                                button: MouseButton::Left,
-                                button_state: MouseButtonState::Up,
-                                ..
-                            } = event
-                            {
-                                if let Some(w) =
-                                    tray.app_handle().get_webview_window("main")
+                                "tray_quit" => app.exit(0),
+                                _ => {}
+                            })
+                            .on_tray_icon_event(|tray, event| {
+                                // Left-click toggles window visibility.
+                                // Right-click opens the menu (Tauri handles
+                                // that by default because
+                                // `show_menu_on_left_click(false)`).
+                                if let TrayIconEvent::Click {
+                                    button: MouseButton::Left,
+                                    button_state: MouseButtonState::Up,
+                                    ..
+                                } = event
                                 {
-                                    match w.is_visible() {
-                                        Ok(true) => {
-                                            let _ = w.hide();
-                                        }
-                                        _ => {
-                                            let _ = w.show();
-                                            let _ = w.set_focus();
+                                    if let Some(w) =
+                                        tray.app_handle().get_webview_window("main")
+                                    {
+                                        match w.is_visible() {
+                                            Ok(true) => {
+                                                let _ = w.hide();
+                                            }
+                                            _ => {
+                                                let _ = w.show();
+                                                let _ = w.set_focus();
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        })
-                        .build(app)?;
-                    Ok(())
-                })();
-                if let Err(e) = tray_result {
-                    tracing::warn!(error = %e, "system tray unavailable — continuing without it");
+                            })
+                            .build(app)?;
+                        Ok::<(), tauri::Error>(())
+                    }));
+                match tray_outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => tracing::warn!(
+                        error = %e,
+                        "system tray unavailable — continuing without it"
+                    ),
+                    Err(_) => tracing::warn!(
+                        "system tray library not loaded \
+                         (likely missing libayatana-appindicator3) — continuing without it"
+                    ),
                 }
             }
 

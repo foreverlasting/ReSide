@@ -82,9 +82,11 @@ also what lets the systemd agent self-configure):
 
 ## Repos & branches
 
-- **ReSide** (this repo). Active branch **`automation-layer`** (the live line;
-  published as `main` on GitHub). `main` + `native-signing-path` = **frozen
-  snapshots** of the abandoned native work — do not build on them.
+- **ReSide** (this repo). The live line is **`main`** (the GitHub default that
+  `origin/HEAD` tracks; the public v0.4.x releases ship from it). Work on
+  short-lived feature branches and PR into `main` (see PRs #4–#11). The abandoned
+  native-signing work is no longer in the active history — `signer.rs` is the
+  live path (see "Live vs parked code" above).
 - **Fork** at `../sideloader-fork`, branch `reside-automation`. Its `origin` is
   upstream `Dadoum/Sideloader` — **never push the fork there**; push to the
   user's own fork repo.

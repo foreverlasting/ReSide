@@ -1,10 +1,14 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { GnomeWindow } from "../components/chrome";
 import { Icon, Button, Badge, cn } from "../components/ui";
 import { ReSideMark } from "../components/logo";
 import type { SetupReport } from "../lib/ipc";
 
 type CheckStatus = "ok" | "warn";
+
+// The one-liner the panel suggests for fixing system deps from a terminal.
+// Single source so the displayed text and the clipboard copy can't drift.
+const FIX_COMMAND = "sudo pacman -S usbmuxd libimobiledevice && reside doctor --fix";
 
 interface SetupCheck {
   key: string;
@@ -96,14 +100,7 @@ export function Setup({
       title="ReSide"
       subtitle="First-run setup"
       dark={dark}
-      toolbar={
-        <>
-          {toolbarExtra}
-          <Button variant="ghost" size="icon" aria-label="Help">
-            <Icon name="helpCircle" size={14} />
-          </Button>
-        </>
-      }
+      toolbar={toolbarExtra}
     >
       <div className="flex h-full">
         {/* Left rail with step indicator */}
@@ -158,15 +155,8 @@ export function Setup({
                   <div className="text-[13px] font-medium">Or fix everything from the terminal</div>
                   <div className="mt-2 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-[12px] text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
                     <span className="text-slate-400 select-none">$</span>
-                    <span className="flex-1">
-                      sudo pacman -S usbmuxd libimobiledevice &amp;&amp; reside doctor --fix
-                    </span>
-                    <button
-                      className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                      aria-label="Copy"
-                    >
-                      <Icon name="copy" size={13} />
-                    </button>
+                    <span className="flex-1">{FIX_COMMAND}</span>
+                    <CopyButton text={FIX_COMMAND} />
                   </div>
                 </div>
               </div>
@@ -221,5 +211,29 @@ function SetupRow({ label, desc, status, meta, action }: Omit<SetupCheck, "key">
         </Button>
       )}
     </div>
+  );
+}
+
+// Copies the fix command to the clipboard, flashing a check on success. Silent
+// no-op if the clipboard API is unavailable (e.g. an insecure context).
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard unavailable — leave the command for manual copy */
+        }
+      }}
+      aria-label="Copy command"
+      title={copied ? "Copied" : "Copy command"}
+      className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+    >
+      <Icon name={copied ? "check" : "copy"} size={13} className={copied ? "text-emerald-500" : undefined} />
+    </button>
   );
 }

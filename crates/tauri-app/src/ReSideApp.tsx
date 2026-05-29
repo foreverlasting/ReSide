@@ -5,10 +5,10 @@
 // that panel, the sidebar, or Settings. Live status (backend/tunnel + theme
 // toggle) is injected into the titlebar; detected devices into the sidebar.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
+import { Activity } from "./screens/Activity";
 import { Dashboard } from "./screens/Dashboard";
 import { ImportModal } from "./screens/ImportModal";
 import { RefreshModal } from "./screens/RefreshModal";
@@ -30,11 +30,31 @@ import {
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
-// On-demand surfaces layered over the always-present dashboard.
-type Overlay = "pairing" | "setup" | "settings" | null;
+// On-demand surfaces layered over the always-present dashboard. The detailed
+// "system" view is intentionally absent: the Dashboard's inline system check is
+// the single source for that (ROADMAP §7d).
+type Overlay = "pairing" | "settings" | "activity" | null;
+
+const THEME_KEY = "reside-theme";
 
 export function ReSideApp() {
-  const [dark, setDark] = useState(false);
+  // Persisted across launches; first run falls back to the OS preference.
+  const [dark, setDark] = useState(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved) return saved === "dark";
+      return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+    } catch {
+      /* storage unavailable — theme just won't persist this session */
+    }
+  }, [dark]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [systemCheckExpanded, setSystemCheckExpanded] = useState(false);
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
@@ -210,30 +230,7 @@ export function ReSideApp() {
       className="h-screen w-screen overflow-hidden"
       style={{ background: dark ? "#21222c" : "#dce0e8" }}
     >
-      {overlay === "setup" ? (
-        <Setup
-          dark={dark}
-          report={setup.data}
-          rerunning={setup.isFetching}
-          onRerun={() => setup.refetch()}
-          onContinue={closeOverlay}
-          toolbarExtra={toolbarExtra}
-          railExtra={
-            <DevicesRail
-              devices={deviceList}
-              error={devices.error}
-              selectedUdid={target?.udid}
-              onSelect={setSelectedUdid}
-              wifiReachable={wifiRailCheck.data?.available ?? false}
-              wifiChecking={wifiRailCheck.isFetching}
-              resolving={resolveWifi.isPending}
-              resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
-              onConnectWifi={() => resolveWifi.mutate()}
-              onRescanWifi={() => wifiRailCheck.refetch()}
-            />
-          }
-        />
-      ) : overlay === "settings" ? (
+      {overlay === "settings" ? (
         <Settings
           dark={dark}
           onClose={closeOverlay}
@@ -253,6 +250,8 @@ export function ReSideApp() {
             />
           }
         />
+      ) : overlay === "activity" ? (
+        <Activity dark={dark} onClose={closeOverlay} toolbarExtra={toolbarExtra} />
       ) : overlay === "pairing" ? (
         <Pairing
           dark={dark}
@@ -310,14 +309,15 @@ export function ReSideApp() {
                 setSystemCheckExpanded(true);
                 setup.refetch();
               },
-              onOpenSetup: () => setOverlay("setup"),
               onPair: () => setOverlay("pairing"),
               onEnableAgent: () => setAgent.mutate(true),
               agentBusy: setAgent.isPending,
               canEnableAgent,
             }}
             onNavigate={(id) => {
-              if (id === "devices") setOverlay("pairing");
+              if (id === "apps") setOverlay(null);
+              else if (id === "devices") setOverlay("pairing");
+              else if (id === "activity") setOverlay("activity");
               else if (id === "settings") setOverlay("settings");
             }}
           />

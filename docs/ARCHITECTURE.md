@@ -124,7 +124,10 @@ GUI: from `crates/tauri-app/` run **`pnpm tauri:dev`** (the `:dev` script sets
 the Wayland flags `WEBKIT_DISABLE_COMPOSITING_MODE` + `WEBKIT_DISABLE_DMABUF_RENDERER`
 this machine needs — plain `pnpm tauri dev` will misrender). **Rust changes need
 a `tauri:dev` restart.** Helpers auto-found in `target/debug/`, else set
-`RESIDE_SIDELOADER_BIN` / `RESIDE_NETMUXD_BIN`.
+`RESIDE_SIDELOADER_BIN` / `RESIDE_NETMUXD_BIN`. The dev tree has no helpers
+built, so for a real hardware run use **`pnpm tauri:dev:local`** — it points
+those two vars at the installed release helpers (`~/.local/lib/reside/{sideloader,netmuxd}`)
+and delegates to `tauri:dev`.
 
 Release packaging: `packaging/` (`build-tarball.sh`, `install.sh`, `RELEASING.md`).
 Clean-room test helper: `scripts/reside-reset-newuser.sh` (resets to new-user state;

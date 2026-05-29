@@ -130,6 +130,75 @@ cache or a container image. Don't block the first manual release on this.
 (the non-interactive login) and is good open-source citizenship. **Scope:** open
 a PR to `Dadoum/Sideloader` from `673db69`.
 
+## 7. UX cleanup — workflow redundancies + dead controls
+
+**Why:** a walkthrough of the live app (2026-05-28) found controls wired to
+nothing, the same concept built two or three different ways, and one surface
+that's promised in the nav but missing. None block functionality, but together
+they read as half-finished and leak trust. Grouped by effort; do 7a/7b first.
+
+### 7a. Activity view — **IN PROGRESS 2026-05-28**
+The `activity` sidebar nav item is a no-op, yet the backend is already live:
+`get_activity_log` (`lib.rs`) reads a real `activity_log` table that **installs**
+(`installs.rs`) and the **refresh scheduler** (`refresh/scheduler.rs`, severities
+`info`/`warn`/`error`, ops `install`/`refresh`) already write to. For a product
+whose whole point is unattended background refresh, "what happened while I was
+away" is the most valuable missing screen and it's nearly free.
+**Done when:** the Activity nav opens a screen listing recent `activity_log`
+rows (severity, operation, message, relative time) with a sensible empty state.
+
+### 7b. Dead-control sweep — **IN PROGRESS 2026-05-28**
+Wire or remove every control that does nothing in the **live** app:
+- `activity` nav (covered by 7a) and `apps` nav (`ReSideApp.onNavigate` ignores
+  both) — wire `apps` back to the dashboard.
+- Sidebar Devices "+" button (`chrome.tsx`) — no handler → wire to pairing.
+- App card "More" (⋯) menu (`Dashboard.tsx`) — no handler, no menu → remove.
+- "Browse examples" (`Dashboard.tsx` empty state) — `disabled` forever in live → remove.
+- "Help" (?) buttons in `Settings.tsx` + `Setup.tsx` — no target → remove.
+- Setup "Copy" command button (`Setup.tsx`) — no handler → wire to clipboard.
+- (NB: Setup per-row "Install rules"/"Enable agent" only render in the mock
+  gallery — live report items carry no `action` — so they're not live-dead.)
+
+### 7c. Unify credential entry — **DONE 2026-05-28**
+Apple-ID entry existed twice with drifting copy and different controls (ImportModal:
+3 radio rows keyring/session/ask; Settings: 2 pills keyring/session). Extracted
+`components/credentials.tsx` as the single source: `AppleIdFields` (email/password),
+`RememberChoiceField` (tier-configurable radio rows — Import passes all three,
+Settings passes `["keyring","session"]`), `ApplePasswordNote`, and `toRememberMode`
+(maps the UI's "ask"/"session" → the backend's `session` tier). Both screens now
+render the same component; the local `RememberOption`/`RememberPill` are gone.
+Frontend build green. **Not hardware-verified** — needs a real sign-in to confirm.
+
+### 7d. Fix the Setup overlay vs. inline check — **DONE 2026-05-28**
+Resolved by **dropping the redundant overlay** (the chosen option). The detailed
+Setup overlay's only live entry was the inline check's "Open detailed view"
+button, and in live mode it was strictly worse (report items carry no `action`,
+so its fix buttons never rendered, while the inline check wires "Enable agent").
+Removed the button, the `setup` overlay branch + `Setup` import in `ReSideApp`,
+and `onOpenSetup` from `GetStartedHandlers`. The Dashboard inline system check is
+now the single system-status surface. `Setup.tsx` stays as a design-gallery
+screen (still imported by `Gallery`), so re-adding a reachable System view later
+is trivial.
+
+### 7e. De-duplicate onboarding  (medium)
+The Pairing overlay re-presents a "Setup · step 2 of 3" wizard rail that
+duplicates the Dashboard `GetStartedPanel` and is misleading (it's an on-demand
+overlay, not step 2 of a linear flow). Its two footer CTAs ("Skip — USB only" /
+"Enable Wi-Fi refresh") both just close the overlay. Collapse to one honest
+action and drop the duplicate step rail.
+
+### 7f. Pairing auto-chain + Wi-Fi vocabulary  (polish)
+Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi is four manual clicks;
+auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode is on.
+Collapse the three overlapping Wi-Fi entry points (passive rail poll, "Connect
+over Wi-Fi" resolve, Pairing "Check Wi-Fi" reachability) into one user concept.
+
+### 7g. Persist theme — **DONE 2026-05-28**
+`ReSideApp` now persists the light/dark choice to `localStorage` (`reside-theme`)
+and, on first run with nothing stored, falls back to the OS
+`prefers-color-scheme`. Wrapped in try/catch so a missing storage API just means
+it doesn't persist that session.
+
 ## Standing constraints
 
 User is **not a developer** — explain plainly, hand off a concrete thing to check

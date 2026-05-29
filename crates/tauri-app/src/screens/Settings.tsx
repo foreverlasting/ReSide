@@ -12,16 +12,14 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GnomeWindow } from "../components/chrome";
 import { ReSideMark } from "../components/logo";
+import { Button, Input, Badge, Icon, Separator } from "../components/ui";
 import {
-  Button,
-  Input,
-  Label,
-  Badge,
-  Icon,
-  Separator,
-  cn,
-} from "../components/ui";
-import { api, asCommandError, type RememberMode } from "../lib/ipc";
+  AppleIdFields,
+  RememberChoiceField,
+  toRememberMode,
+  type RememberChoice,
+} from "../components/credentials";
+import { api, asCommandError } from "../lib/ipc";
 
 export function Settings({
   dark = false,
@@ -86,14 +84,7 @@ export function Settings({
       title="ReSide"
       subtitle="Settings"
       dark={dark}
-      toolbar={
-        <>
-          {toolbarExtra}
-          <Button variant="ghost" size="icon" aria-label="Help">
-            <Icon name="helpCircle" size={14} />
-          </Button>
-        </>
-      }
+      toolbar={toolbarExtra}
     >
       <div className="flex h-full">
         {/* Left rail */}
@@ -293,8 +284,8 @@ function AppleIdSection({
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState<RememberMode>("keyring");
-  const effectiveRemember: RememberMode = keyringAvailable ? remember : "session";
+  const [remember, setRemember] = useState<RememberChoice>("keyring");
+  const effectiveRemember: RememberChoice = keyringAvailable ? remember : "session";
 
   // When signed in, the form is collapsed behind "Switch account" so the screen
   // shows which account is active instead of a confusing empty login form. When
@@ -303,7 +294,7 @@ function AppleIdSection({
   const showForm = !signedIn || switching;
 
   const save = useMutation({
-    mutationFn: () => api.setAppleCredentials(email, password, effectiveRemember),
+    mutationFn: () => api.setAppleCredentials(email, password, toRememberMode(effectiveRemember)),
     onSuccess: () => {
       setEmail("");
       setPassword("");
@@ -369,42 +360,20 @@ function AppleIdSection({
                 ? "Enter a different Apple ID to switch accounts. The current one is replaced."
                 : "Sign in to sign apps. Apple may ask for a verification code the first time."}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Apple ID</Label>
-                <Input
-                  type="email"
-                  placeholder="you@icloud.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.currentTarget.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                />
-              </div>
-            </div>
+            <AppleIdFields
+              appleId={email}
+              password={password}
+              onAppleId={setEmail}
+              onPassword={setPassword}
+            />
 
-            <div className="flex items-center gap-2">
-              <RememberPill
-                active={effectiveRemember === "keyring"}
-                disabled={!keyringAvailable}
-                onClick={() => setRemember("keyring")}
-                label="Save on this device"
-                hint={keyringAvailable ? "Enables automatic refresh" : "No keyring detected"}
-              />
-              <RememberPill
-                active={effectiveRemember === "session"}
-                onClick={() => setRemember("session")}
-                label="Just this session"
-                hint="Cleared when ReSide closes"
-              />
-            </div>
+            <RememberChoiceField
+              value={effectiveRemember}
+              onChange={setRemember}
+              keyringAvailable={keyringAvailable}
+              tiers={["keyring", "session"]}
+              legend="Remember this Apple ID?"
+            />
 
             {saveError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-[12.5px] text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
@@ -440,37 +409,6 @@ function AppleIdSection({
         )}
       </div>
     </section>
-  );
-}
-
-function RememberPill({
-  active,
-  disabled = false,
-  onClick,
-  label,
-  hint,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50",
-        active
-          ? "border-slate-900 bg-slate-50 dark:border-slate-100 dark:bg-slate-800"
-          : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"
-      )}
-    >
-      <div className="text-[12.5px] font-medium">{label}</div>
-      <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{hint}</div>
-    </button>
   );
 }
 

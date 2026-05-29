@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "tauri:dev": "PATH=\"$HOME/.cargo/bin:$HOME/.local/share/pnpm:$PATH\" WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev"
+    "tauri:dev": "PATH=\"$HOME/.cargo/bin:$HOME/.local/share/pnpm:$PATH\" WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
+    "tauri:dev:local": "RESIDE_SIDELOADER_BIN=\"$HOME/.local/lib/reside/sideloader\" RESIDE_NETMUXD_BIN=\"$HOME/.local/lib/reside/netmuxd\" pnpm tauri:dev"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",

@@ -7,9 +7,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, asCommandError, type DeviceInfo, type RememberMode } from "../lib/ipc";
+import { api, asCommandError, type DeviceInfo } from "../lib/ipc";
 import { useOperation, type OperationStage } from "../lib/operations";
 import { Button, Input, Label, Icon, Badge, Progress, cn } from "../components/ui";
+import {
+  AppleIdFields,
+  RememberChoiceField,
+  ApplePasswordNote,
+  toRememberMode,
+  type RememberChoice,
+} from "../components/credentials";
 
 const STAGE_TEXT: Record<OperationStage, string> = {
   queued: "Queued…",
@@ -27,9 +34,9 @@ const STAGE_TEXT: Record<OperationStage, string> = {
 
 const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
-// The UI offers three tiers; "ask" maps to the backend's in-memory `session`
-// store but is discarded when this modal closes (see the cleanup effect).
-type RememberChoice = "keyring" | "session" | "ask";
+// The UI offers three tiers (see `components/credentials`); "ask" maps to the
+// backend's in-memory `session` store but is discarded when this modal closes
+// (see the cleanup effect below).
 
 export function ImportModal({
   device,
@@ -87,8 +94,7 @@ export function ImportModal({
   const install = useMutation({
     mutationFn: async () => {
       if (!signedIn.data && appleId && password) {
-        const mode: RememberMode = remember === "keyring" ? "keyring" : "session";
-        await api.setAppleCredentials(appleId, password, mode);
+        await api.setAppleCredentials(appleId, password, toRememberMode(remember));
         await signedIn.refetch();
       }
       return api.installIpa({
@@ -158,60 +164,18 @@ export function ImportModal({
           {/* Apple ID — only when not already stored */}
           {signedIn.data === false && !needs2fa && (
             <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="mb-1.5 block">Apple ID</Label>
-                  <Input
-                    value={appleId}
-                    onChange={(e) => setAppleId(e.target.value)}
-                    placeholder="you@icloud.com"
-                    autoComplete="off"
-                  />
-                </div>
-                <div>
-                  <Label className="mb-1.5 block">Password</Label>
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete="off"
-                  />
-                </div>
-              </div>
-              {/* How to remember the credentials */}
-              <fieldset className="space-y-1.5">
-                <legend className="mb-1 text-[12px] font-medium text-slate-700 dark:text-slate-300">
-                  Remember my Apple ID?
-                </legend>
-                <RememberOption
-                  checked={remember === "keyring"}
-                  disabled={!keyringAvailable}
-                  onSelect={() => setRemember("keyring")}
-                  title="On this device"
-                  desc={
-                    keyringAvailable
-                      ? "Saved securely in your keyring · enables automatic refresh"
-                      : "Unavailable — install a system keyring (gnome-keyring or KWallet)"
-                  }
-                />
-                <RememberOption
-                  checked={remember === "session"}
-                  onSelect={() => setRemember("session")}
-                  title="Just this session"
-                  desc="Kept in memory until you quit ReSide; never written to disk"
-                />
-                <RememberOption
-                  checked={remember === "ask"}
-                  onSelect={() => setRemember("ask")}
-                  title="Don't remember"
-                  desc="Ask me every time I install or refresh"
-                />
-              </fieldset>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <Icon name="shieldCheck" size={12} />
-                Your password is only ever sent to Apple.
-              </div>
+              <AppleIdFields
+                appleId={appleId}
+                password={password}
+                onAppleId={setAppleId}
+                onPassword={setPassword}
+              />
+              <RememberChoiceField
+                value={remember}
+                onChange={setRemember}
+                keyringAvailable={keyringAvailable}
+              />
+              <ApplePasswordNote />
             </div>
           )}
 
@@ -291,44 +255,3 @@ export function ImportModal({
   );
 }
 
-/// One radio row in the "Remember my Apple ID?" group.
-function RememberOption({
-  checked,
-  disabled = false,
-  onSelect,
-  title,
-  desc,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex items-start gap-2 rounded-md border px-2.5 py-1.5",
-        checked
-          ? "border-slate-400 bg-white dark:border-slate-600 dark:bg-slate-900"
-          : "border-slate-200 dark:border-slate-800",
-        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-      )}
-    >
-      <input
-        type="radio"
-        name="remember-apple-id"
-        className="mt-0.5"
-        checked={checked}
-        disabled={disabled}
-        onChange={onSelect}
-      />
-      <span className="min-w-0">
-        <span className="block text-[12.5px] font-medium text-slate-800 dark:text-slate-200">
-          {title}
-        </span>
-        <span className="block text-[11px] text-slate-500">{desc}</span>
-      </span>
-    </label>
-  );
-}

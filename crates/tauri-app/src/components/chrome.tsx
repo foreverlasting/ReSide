@@ -160,7 +160,12 @@ export const Sidebar = ({
           <div className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Devices
           </div>
-          <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <button
+            onClick={() => onNavigate?.("devices")}
+            aria-label="Add a device"
+            title="Pair a device"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
             <Icon name="plus" size={13} />
           </button>
         </div>

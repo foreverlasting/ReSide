@@ -32,7 +32,9 @@ This file is the entry point for any agent or tool working in the repo. It's a
 - **Don't bump pinned deps** (incl. the fork's LDC 1.34 toolchain).
 - Diagnostics via `tracing`, never `println!`.
 - New UI: never put `data-theme` and a `dark:` utility on the same node.
-- Run the GUI with `pnpm tauri:dev` (sets the Wayland flags this setup needs).
+- Run the GUI with `pnpm tauri:dev` (sets the Wayland flags this setup needs);
+  use `pnpm tauri:dev:local` to also point the helper binaries at the installed
+  release ones (`~/.local/lib/reside/`), since the dev tree ships none.
 - **Device/Apple behavior validates only on the maintainer's hardware.** Reset to
   new-user state with `scripts/reside-reset-newuser.sh`.
 - Never bundle/commit Apple's ADI libraries; never copy the anisette device file

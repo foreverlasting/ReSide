@@ -13,7 +13,6 @@ export interface GetStartedHandlers {
   expanded: boolean;
   rerunning: boolean;
   onRunCheck: () => void;
-  onOpenSetup: () => void;
   onPair: () => void;
   onEnableAgent: () => void;
   agentBusy: boolean;
@@ -456,17 +455,12 @@ function InlineSystemCheck({ gs }: { gs: GetStartedHandlers }) {
           ))
         )}
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2.5 dark:border-slate-800">
-        <div className="flex items-center gap-2 text-[11.5px] text-slate-500">
-          <Icon name="terminal" size={12} />
-          <span>Or fix all from terminal:</span>
-          <code className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
-            reside doctor --fix
-          </code>
-        </div>
-        <Button size="sm" variant="outline" onClick={gs.onOpenSetup}>
-          Open detailed view
-        </Button>
+      <div className="flex items-center gap-2 border-t border-slate-200 px-3 py-2.5 text-[11.5px] text-slate-500 dark:border-slate-800">
+        <Icon name="terminal" size={12} />
+        <span>Or fix all from terminal:</span>
+        <code className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+          reside doctor --fix
+        </code>
       </div>
     </div>
   );
@@ -646,9 +640,14 @@ function EmptyDashboard({ live = false, onChoose }: { live?: boolean; onChoose?:
           <Button iconLeft="upload" disabled={live && !onChoose} onClick={live ? onChoose : undefined}>
             Choose IPA…
           </Button>
-          <Button variant="outline" disabled={live}>
-            Browse examples
-          </Button>
+          {/* "Browse examples" is a gallery-only affordance — there's no live
+              backend for it, so it's omitted in the real app rather than shown
+              permanently disabled. */}
+          {!live && (
+            <Button variant="outline" disabled>
+              Browse examples
+            </Button>
+          )}
         </div>
 
         <div className="mt-6 flex items-center gap-4 text-[11.5px] text-slate-500">
@@ -711,9 +710,6 @@ function AppCard({
             </div>
             <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{bundle}</div>
           </div>
-          <button className="-mr-1 opacity-0 transition-opacity group-hover:opacity-100" aria-label="More">
-            <Icon name="more" size={16} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" />
-          </button>
         </div>
 
         <div className="mt-3.5 flex items-center justify-between gap-2">

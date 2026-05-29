@@ -363,8 +363,17 @@ fn parse_cert_list(output: &str) -> Vec<CertInfo> {
 /// Talks only to Apple (not the device), so no muxer is involved. Surfacing this
 /// is what lets a user at Apple's ~2-cert cap see and [`revoke_cert`] an old one
 /// instead of hitting [`AppError::AppleCertLimitReached`] with no way forward.
-pub async fn list_certs(creds: &AppleCredentials) -> Result<Vec<CertInfo>> {
-    let outcome = run(creds, &["cert", "list"], &[], None).await?;
+///
+/// Returns [`AppError::AppleAuth2faRequired`] if Apple challenges the login and
+/// no `two_fa_code` was supplied — re-call with the code set (same contract as
+/// [`install`]). A trusted device usually skips this, so the first call passes
+/// `None`.
+pub async fn list_certs(
+    creds: &AppleCredentials,
+    two_fa_code: Option<&str>,
+) -> Result<Vec<CertInfo>> {
+    let extra: Vec<&str> = two_fa_code.into_iter().collect();
+    let outcome = run(creds, &["cert", "list"], &extra, None).await?;
     classify(&outcome)?;
     Ok(parse_cert_list(&outcome.output))
 }
@@ -372,8 +381,16 @@ pub async fn list_certs(creds: &AppleCredentials) -> Result<Vec<CertInfo>> {
 /// Revoke the development certificate with the given serial number via the fork's
 /// `cert revoke`. The serial comes from [`CertInfo::serial_number`]. Apple-only,
 /// so no muxer. After this, the account is back under the cap and can sign again.
-pub async fn revoke_cert(creds: &AppleCredentials, serial_number: &str) -> Result<()> {
-    let outcome = run(creds, &["cert", "revoke", serial_number], &[], None).await?;
+///
+/// Like [`list_certs`], returns [`AppError::AppleAuth2faRequired`] if Apple wants
+/// a code and none was supplied — re-call with `two_fa_code` set.
+pub async fn revoke_cert(
+    creds: &AppleCredentials,
+    serial_number: &str,
+    two_fa_code: Option<&str>,
+) -> Result<()> {
+    let extra: Vec<&str> = two_fa_code.into_iter().collect();
+    let outcome = run(creds, &["cert", "revoke", serial_number], &extra, None).await?;
     classify(&outcome)
 }
 

@@ -85,15 +85,31 @@ below; both are free software.
 
 ## Building from source
 
-ReSide itself builds with a standard Rust + Node toolchain:
+ReSide itself builds with a standard Rust + Node toolchain. You need:
+
+- **Rust** via [rustup](https://rustup.rs) — the pinned toolchain in
+  `rust-toolchain.toml` (1.95.0 + clippy/rustfmt) installs automatically on first
+  `cargo` run.
+- **Node 18+** and **pnpm 10+** (`npm i -g pnpm`, or `corepack enable`).
+- **Tauri's Linux system libraries**: WebKitGTK 4.1, GTK 3, libsoup 3, plus a C
+  toolchain and `pkg-config`. On Arch/CachyOS: `sudo pacman -S webkit2gtk-4.1
+  libsoup3 gtk3 base-devel`. (See the
+  [Tauri prerequisites](https://tauri.app/start/prerequisites/) for other distros.)
 
 ```sh
 git clone <this repo> && cd <repo>/crates/tauri-app
-pnpm install
+pnpm install            # prints a harmless "ignored build scripts: esbuild" line — see note below
 pnpm tauri:dev          # run the full app
 cargo test -p reside-core
 cargo build --workspace
 ```
+
+> **The esbuild warning is expected.** Recent pnpm refuses to run esbuild's
+> postinstall and would otherwise abort `pnpm build` / `pnpm tauri:dev` on a
+> pre-run check. esbuild ships its native binary prebuilt, so that script is
+> unnecessary — a committed `verifyDepsBeforeRun: false` in
+> `crates/tauri-app/pnpm-workspace.yaml` turns the check off, so the commands
+> above work as written. The warning during `pnpm install` is cosmetic.
 
 To produce a release tarball like the one above, you need the two helper
 binaries built first, then run the packaging script:

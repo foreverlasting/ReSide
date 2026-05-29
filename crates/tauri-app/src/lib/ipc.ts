@@ -132,6 +132,9 @@ export interface CredentialStatus {
   mode: "keyring" | "session" | "none";
   /** Whether a system keyring exists — gates the "remember on this device" option. */
   keyringAvailable: boolean;
+  /** The signed-in Apple ID (email), so the UI can show which account is active.
+   *  `null` when `mode` is "none". */
+  appleId: string | null;
 }
 
 /** Returned by `refresh_app` on a successful single-app refresh. */
@@ -215,8 +218,10 @@ export const api = {
   agentStatus: () => invoke<AgentStatus>("agent_status"),
   setBackgroundAgent: (enabled: boolean) =>
     invoke<AgentStatus>("set_background_agent", { enabled }),
-  // Certificate management (Settings → Certificates).
-  listCertificates: () => invoke<CertInfo[]>("list_certificates"),
-  revokeCertificate: (serialNumber: string) =>
-    invoke<void>("revoke_certificate", { serialNumber }),
+  // Certificate management (Settings → Certificates). `twoFaCode` is set only on
+  // a retry after an `AppleAuth2FARequired` error, mirroring `installIpa`.
+  listCertificates: (twoFaCode?: string) =>
+    invoke<CertInfo[]>("list_certificates", { twoFaCode }),
+  revokeCertificate: (serialNumber: string, twoFaCode?: string) =>
+    invoke<void>("revoke_certificate", { serialNumber, twoFaCode }),
 };

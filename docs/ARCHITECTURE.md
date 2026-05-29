@@ -82,14 +82,34 @@ also what lets the systemd agent self-configure):
 
 ## Repos & branches
 
-- **ReSide** (this repo). Active branch **`automation-layer`** (the live line;
-  published as `main` on GitHub). `main` + `native-signing-path` = **frozen
-  snapshots** of the abandoned native work — do not build on them.
+- **ReSide** (this repo). The live line is **`main`** (the GitHub default that
+  `origin/HEAD` tracks; the public v0.4.x releases ship from it). Work on
+  short-lived feature branches and PR into `main` (see PRs #4–#11). The abandoned
+  native-signing work is no longer in the active history — `signer.rs` is the
+  live path (see "Live vs parked code" above).
 - **Fork** at `../sideloader-fork`, branch `reside-automation`. Its `origin` is
   upstream `Dadoum/Sideloader` — **never push the fork there**; push to the
   user's own fork repo.
 
 ## Build / run / gates
+
+**Prerequisites:** Rust via rustup (the `rust-toolchain.toml` pin — 1.95.0 +
+clippy/rustfmt — installs on first `cargo` run, so all environments match);
+Node 18+ and pnpm 10+; and Tauri's Linux system libs (WebKitGTK 4.1, GTK 3,
+libsoup 3, a C toolchain, `pkg-config`). No `-dev` split on Arch — the runtime
+packages carry the headers.
+
+**The esbuild / pnpm gotcha (don't relearn this):** recent pnpm (11.x) won't run
+esbuild's postinstall build script and then *aborts* `pnpm build` / `pnpm
+tauri:dev` on its pre-run dependency check — `ERR_PNPM_IGNORED_BUILDS`. esbuild
+ships its native binary (`@esbuild/<platform>`) prebuilt, so that script is
+unnecessary and the abort is a false positive. A committed `verifyDepsBeforeRun:
+false` in `crates/tauri-app/pnpm-workspace.yaml` disables the check so the
+commands below work unmodified; the "ignored build scripts: esbuild" line at
+`pnpm install` time is cosmetic. (Equivalent one-off: pass
+`--config.verifyDepsBeforeRun=false`. Note: `onlyBuiltDependencies` in that same
+file is *not* honored by this pnpm version, and the setting is read from
+`pnpm-workspace.yaml`, not `.npmrc`.)
 
 From the repo root, keep all four green:
 

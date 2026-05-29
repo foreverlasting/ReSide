@@ -137,18 +137,20 @@ nothing, the same concept built two or three different ways, and one surface
 that's promised in the nav but missing. None block functionality, but together
 they read as half-finished and leak trust. Grouped by effort; do 7a/7b first.
 
-### 7a. Activity view — **IN PROGRESS 2026-05-28**
+### 7a. Activity view — **DONE 2026-05-29**
 The `activity` sidebar nav item is a no-op, yet the backend is already live:
 `get_activity_log` (`lib.rs`) reads a real `activity_log` table that **installs**
 (`installs.rs`) and the **refresh scheduler** (`refresh/scheduler.rs`, severities
 `info`/`warn`/`error`, ops `install`/`refresh`) already write to. For a product
 whose whole point is unattended background refresh, "what happened while I was
 away" is the most valuable missing screen and it's nearly free.
-**Done when:** the Activity nav opens a screen listing recent `activity_log`
-rows (severity, operation, message, relative time) with a sensible empty state.
+Shipped: `screens/Activity.tsx` lists recent `activity_log` rows (severity,
+operation, message, relative time) with a sensible empty state, wired as an
+`"activity"` nav overlay in `ReSideApp`. Frontend build green; **not yet
+hardware-verified** (the list populates after a real install/refresh).
 
-### 7b. Dead-control sweep — **IN PROGRESS 2026-05-28**
-Wire or remove every control that does nothing in the **live** app:
+### 7b. Dead-control sweep — **DONE 2026-05-29**
+Wired or removed every control that did nothing in the **live** app:
 - `activity` nav (covered by 7a) and `apps` nav (`ReSideApp.onNavigate` ignores
   both) — wire `apps` back to the dashboard.
 - Sidebar Devices "+" button (`chrome.tsx`) — no handler → wire to pairing.

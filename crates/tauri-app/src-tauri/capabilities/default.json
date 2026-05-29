@@ -6,9 +6,7 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "fs:default",
     "notification:default",
-    "os:default",
-    "shell:default"
+    "os:default"
   ]
 }

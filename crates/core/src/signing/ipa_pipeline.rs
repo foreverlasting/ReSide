@@ -198,6 +198,16 @@ fn extract_zip(archive_path: &Path, dest: &Path) -> Result<()> {
         if entry.is_symlink() {
             let mut target = String::new();
             entry.read_to_string(&mut target).map_err(AppError::Io)?;
+            // `enclosed_name` guards the entry's *own* path, but the symlink
+            // target is arbitrary: an absolute or `..`-laden target would let a
+            // later regular-file entry be written *through* this link, outside
+            // `dest` (symlink zip-slip). Reject any target that doesn't stay
+            // within the extraction root.
+            if !symlink_target_stays_within(dest, &out_path, &target) {
+                return Err(AppError::Internal(
+                    "IPA contains a symlink escaping the archive root".into(),
+                ));
+            }
             // Replace an existing path (re-extraction) before symlinking.
             let _ = fs::remove_file(&out_path);
             std::os::unix::fs::symlink(&target, &out_path).map_err(AppError::Io)?;
@@ -212,6 +222,47 @@ fn extract_zip(archive_path: &Path, dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a symlink at `link_path` pointing at `target` resolves to a location
+/// inside `root`. Absolute targets are rejected outright; relative ones are
+/// resolved against the link's parent and checked component-by-component so a
+/// `..` sequence can never climb above `root`. Purely lexical (no filesystem
+/// access), which is what we want: the target may not exist yet at extraction.
+fn symlink_target_stays_within(root: &Path, link_path: &Path, target: &str) -> bool {
+    use std::path::Component;
+
+    let target = Path::new(target);
+    if target.is_absolute() {
+        return false;
+    }
+    let Some(link_parent) = link_path.parent() else {
+        return false;
+    };
+
+    // Normalize `link_parent` (already under `root`) joined with `target`,
+    // collapsing `.`/`..` lexically. Any `..` that would pop past `root` fails.
+    let root_depth = root.components().count();
+    let mut depth = link_parent.components().count();
+    for comp in target.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+                if depth < root_depth {
+                    return false;
+                }
+            }
+            Component::Normal(_) => depth += 1,
+            // A root or prefix component inside a relative path shouldn't occur,
+            // but treat it as an escape rather than trusting it.
+            Component::RootDir | Component::Prefix(_) => return false,
+        }
+    }
+    true
 }
 
 /// Find the single `Payload/<Name>.app` directory.
@@ -657,6 +708,51 @@ mod tests {
         let dest = work.path().join("out");
         let err = extract_zip(&evil, &dest).unwrap_err();
         assert!(matches!(err, AppError::Internal(_)));
+    }
+
+    #[test]
+    fn rejects_symlink_escaping_archive_root() {
+        let work = tempfile::tempdir().unwrap();
+        let evil = work.path().join("evil-symlink.ipa");
+        {
+            let f = File::create(&evil).unwrap();
+            let mut zw = zip::ZipWriter::new(f);
+            // A symlink whose *name* is enclosed (passes enclosed_name) but whose
+            // *target* climbs out of the extraction root — the symlink zip-slip.
+            zw.add_symlink(
+                "Payload/escape",
+                "../../../../../../etc",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zw.finish().unwrap();
+        }
+        let dest = work.path().join("out");
+        let err = extract_zip(&evil, &dest).unwrap_err();
+        assert!(matches!(err, AppError::Internal(_)));
+    }
+
+    #[test]
+    fn symlink_target_within_root_is_allowed() {
+        // A relative target that stays inside the root is fine (frameworks use
+        // these heavily, e.g. `Current -> A`).
+        let root = Path::new("/tmp/extract");
+        assert!(symlink_target_stays_within(
+            root,
+            &root.join("Foo.framework/Versions/Current"),
+            "A"
+        ));
+        // ..but not one that climbs above it, nor an absolute target.
+        assert!(!symlink_target_stays_within(
+            root,
+            &root.join("Foo.framework/x"),
+            "../../../../etc/passwd"
+        ));
+        assert!(!symlink_target_stays_within(
+            root,
+            &root.join("x"),
+            "/etc/passwd"
+        ));
     }
 
     /// Full sign+verify against a real IPA. Gated on `RESIDE_TEST_IPA` so CI

@@ -194,12 +194,73 @@ Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi is four manual c
 auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode is on.
 Collapse the three overlapping Wi-Fi entry points (passive rail poll, "Connect
 over Wi-Fi" resolve, Pairing "Check Wi-Fi" reachability) into one user concept.
+**Hardware feedback 2026-05-29:** the user asked whether the "Establish tunnel" /
+"Check Wi-Fi" buttons do anything and whether the Devices screen is even needed.
+They DO call live backend commands, but the manual chain is the clunk — fold the
+"is this screen necessary / auto-chain it" question into 7e + this item.
 
 ### 7g. Persist theme — **DONE 2026-05-28**
 `ReSideApp` now persists the light/dark choice to `localStorage` (`reside-theme`)
 and, on first run with nothing stored, falls back to the OS
 `prefers-color-scheme`. Wrapped in try/catch so a missing storage API just means
 it doesn't persist that session.
+
+### 7h. Persistent sidebar / consistent chrome — hardware feedback 2026-05-29
+The Dashboard sidebar (nav + device card + agent card) vanishes when you open
+Devices/Activity/Settings, because each of those is a full-screen overlay with
+its own bespoke left rail — switching surfaces feels like jumping between
+different apps. Make the persistent sidebar (and its active-nav highlight) stay
+put across all surfaces, swapping only the main pane. This also closes the §7d
+gap: once the system check is green there's currently NO way to review system
+status (the inline check only shows during onboarding); a persistent "System"
+entry would restore that. (User flagged this directly during §7b verification.)
+
+### 7i. Don't offer "Connect over Wi-Fi" before pairing — hardware feedback 2026-05-29
+On a fresh/new-user state the Devices rail shows "An iPhone is reachable over
+Wi-Fi" + a Connect button before any device is paired. The reachability ping may
+be accurate, but connecting/refreshing over Wi-Fi needs a pairing record, so the
+action shouldn't be offered until the device is paired. Gate the "Connect over
+Wi-Fi" affordance (and likely the whole Wi-Fi resolve path) behind a successful
+pairing. Pairs with 7f's Wi-Fi-vocabulary cleanup.
+
+### 7j. Modals stay light in dark mode — hardware feedback 2026-05-29
+The install (`ImportModal`) and refresh (`RefreshModal`) dialogs render all-white
+even with dark mode on. Root cause is the documented theming gotcha: they render
+as siblings of `Dashboard`, OUTSIDE the `GnomeWindow` `data-theme` wrapper, so
+their `dark:` utilities (which compile to `[data-theme=dark] .dark\:…` descendant
+selectors) never match. Fix: pass `dark` into the modals and wrap each in a
+`data-theme` node (mirror `GnomeWindow`'s `display:contents` wrapper), or hoist a
+single `data-theme` onto ReSideApp's root.
+
+## 8. Certificate count accuracy — hardware feedback 2026-05-29
+
+**Why:** on hardware, an install failed with Apple's ~2-cert cap while
+Settings → Certificates listed only **one**. Revoking it unstuck the install, but
+the mismatch means the UI's cert count can disagree with what Apple actually
+counts — confusing and a little alarming ("did I lose a cert?").
+
+**Likely causes:** (a) Apple's cap counts a **pending certificate request** (the
+7460 text is "…or a pending certificate request"), which is never an issued cert
+so `cert list` can't show it; and/or (b) `signer.rs::parse_cert_list` silently
+drops any cert whose line doesn't match the exact 3-backtick shape (a back-tick
+in the name, a wrapped line) — an invisible under-count.
+
+**Refinement 2026-05-29:** the user reports Settings has *always* shown only ONE
+cert, never two. That favors a **persistent** under-count (a consistently-dropped
+parse line, or `cert list` omitting a cert from another machine/context) over the
+transient pending-request theory. Their account is fine (revoke→reinstall leaves
+exactly 1, as expected). First diagnostic step is to capture the fork's raw
+`cert list` stdout for their account and diff it against what `parse_cert_list`
+keeps.
+
+**Scope:** make the listed count reconcile with the cap. Surface pending requests
+(or at least explain them in the cap message), and harden `parse_cert_list`
+against format variation instead of dropping rows; emit a "couldn't parse N
+lines" signal so a drop is visible, not silent.
+
+**Done when:** when signing fails at the cap, Settings shows enough to explain
+*why* (issued + pending), and no issued cert is ever silently missing. Validate
+on the user's account.
 
 ## Standing constraints
 

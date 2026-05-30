@@ -333,29 +333,57 @@ pub struct CertInfo {
     pub machine_name: String,
 }
 
+/// Outcome of parsing `cert list`: the certs we understood, plus any line that
+/// *looked* like a cert row — it carries both the "serial number" and "machine
+/// named" anchors the fork prints for every cert — yet didn't yield the three
+/// back-tick-quoted fields. Keeping the latter turns a silent under-count (the
+/// §8 hazard, where a dropped row makes Settings disagree with Apple's cap) into
+/// a signal the caller can surface.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ParsedCertList {
+    certs: Vec<CertInfo>,
+    unparsed: Vec<String>,
+}
+
+/// Pull the three back-tick-quoted fields (`name`, `serial`, `machine`) out of a
+/// single cert line. `None` if the line doesn't carry exactly three — e.g. a
+/// back-tick inside the name, or a line the terminal wrapped mid-field.
+fn extract_cert_fields(line: &str) -> Option<CertInfo> {
+    let fields: Vec<&str> = line.split('`').skip(1).step_by(2).collect();
+    match fields.as_slice() {
+        [name, serial, machine] => Some(CertInfo {
+            name: (*name).to_string(),
+            serial_number: (*serial).to_string(),
+            machine_name: (*machine).to_string(),
+        }),
+        _ => None,
+    }
+}
+
 /// Parse the fork's human-readable `cert list` output into structured certs.
 ///
 /// Pure (no process) so it is unit-tested against the fork's exact format. Each
 /// cert is one line shaped like:
 /// `` - `name` with the serial number `serial`, from the machine named `machine`.``
-/// We key off the three back-tick-quoted fields rather than the surrounding
-/// prose, so login banners and slf4d log lines mixed into the stream are ignored.
-fn parse_cert_list(output: &str) -> Vec<CertInfo> {
-    output
-        .lines()
-        .filter(|line| line.contains("serial number"))
-        .filter_map(|line| {
-            let fields: Vec<&str> = line.split('`').skip(1).step_by(2).collect();
-            match fields.as_slice() {
-                [name, serial, machine] => Some(CertInfo {
-                    name: (*name).to_string(),
-                    serial_number: (*serial).to_string(),
-                    machine_name: (*machine).to_string(),
-                }),
-                _ => None,
-            }
-        })
-        .collect()
+///
+/// A line is treated as a cert row only when it carries BOTH the "serial number"
+/// and "machine named" anchors — the pair the fork prints for every cert. That
+/// keeps login banners and slf4d log lines (which may mention a serial number in
+/// passing, but not "machine named") out of the count. A row that has both
+/// anchors yet won't yield three back-tick fields is recorded as `unparsed`
+/// rather than silently dropped, so a parse miss can't quietly under-count (§8).
+fn parse_cert_list(output: &str) -> ParsedCertList {
+    let mut parsed = ParsedCertList::default();
+    for line in output.lines() {
+        if !(line.contains("serial number") && line.contains("machine named")) {
+            continue;
+        }
+        match extract_cert_fields(line) {
+            Some(cert) => parsed.certs.push(cert),
+            None => parsed.unparsed.push(line.trim().to_string()),
+        }
+    }
+    parsed
 }
 
 /// List the account's development certificates via the fork's `cert list`.
@@ -375,7 +403,21 @@ pub async fn list_certs(
     let extra: Vec<&str> = two_fa_code.into_iter().collect();
     let outcome = run(creds, &["cert", "list"], &extra, None).await?;
     classify(&outcome)?;
-    Ok(parse_cert_list(&outcome.output))
+    let ParsedCertList { certs, unparsed } = parse_cert_list(&outcome.output);
+    if !unparsed.is_empty() {
+        // A line carried both cert anchors but didn't resolve to the three fields
+        // we key off, so the count we return under-reports. Log it loudly (cert
+        // names/machines only — no credentials) so the drop is diagnosable rather
+        // than silently making Settings disagree with Apple's cap (§8).
+        tracing::warn!(
+            dropped = unparsed.len(),
+            lines = ?unparsed,
+            "cert list: {} line(s) looked like a certificate but did not parse; \
+             the displayed count may be lower than Apple's",
+            unparsed.len()
+        );
+    }
+    Ok(certs)
 }
 
 /// Revoke the development certificate with the given serial number via the fork's
@@ -531,9 +573,9 @@ Currently registered certificates:
  - `iOS Development` with the serial number `4D5E6F`, from the machine named `eric-desktop`.
 INFO some unrelated log mentioning a serial number in prose
 ";
-        let certs = parse_cert_list(output);
+        let parsed = parse_cert_list(output);
         assert_eq!(
-            certs,
+            parsed.certs,
             vec![
                 CertInfo {
                     name: "iOS Development".into(),
@@ -547,11 +589,40 @@ INFO some unrelated log mentioning a serial number in prose
                 },
             ]
         );
+        // The prose log line mentions "serial number" but not "machine named",
+        // so it is neither a cert nor counted as an unparsed row.
+        assert!(parsed.unparsed.is_empty());
     }
 
     #[test]
     fn parse_cert_list_handles_empty_account() {
         let output = "You have 0 certificates registered.\nCurrently registered certificates:\n";
-        assert!(parse_cert_list(output).is_empty());
+        let parsed = parse_cert_list(output);
+        assert!(parsed.certs.is_empty());
+        assert!(parsed.unparsed.is_empty());
+    }
+
+    #[test]
+    fn parse_cert_list_records_unparsable_rows_instead_of_dropping() {
+        // The second row carries both cert anchors but a stray back-tick in the
+        // name throws off the field split. The old parser silently dropped it,
+        // making the count under-report Apple's (§8); now it is retained as an
+        // unparsed line so the miss is visible, and the good row still parses.
+        let output = "\
+Currently registered certificates:
+ - `iOS Development` with the serial number `1A2B3C`, from the machine named `eric-laptop`.
+ - `weird`name` with the serial number `4D5E6F`, from the machine named `eric-desktop`.
+";
+        let parsed = parse_cert_list(output);
+        assert_eq!(
+            parsed.certs,
+            vec![CertInfo {
+                name: "iOS Development".into(),
+                serial_number: "1A2B3C".into(),
+                machine_name: "eric-laptop".into(),
+            }]
+        );
+        assert_eq!(parsed.unparsed.len(), 1);
+        assert!(parsed.unparsed[0].contains("4D5E6F"));
     }
 }

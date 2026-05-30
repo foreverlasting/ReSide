@@ -194,12 +194,107 @@ Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi is four manual c
 auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode is on.
 Collapse the three overlapping Wi-Fi entry points (passive rail poll, "Connect
 over Wi-Fi" resolve, Pairing "Check Wi-Fi" reachability) into one user concept.
+**Hardware feedback 2026-05-29:** the user asked whether the "Establish tunnel" /
+"Check Wi-Fi" buttons do anything and whether the Devices screen is even needed.
+They DO call live backend commands, but the manual chain is the clunk — fold the
+"is this screen necessary / auto-chain it" question into 7e + this item.
 
 ### 7g. Persist theme — **DONE 2026-05-28**
 `ReSideApp` now persists the light/dark choice to `localStorage` (`reside-theme`)
 and, on first run with nothing stored, falls back to the OS
 `prefers-color-scheme`. Wrapped in try/catch so a missing storage API just means
 it doesn't persist that session.
+
+### 7h. Persistent sidebar / consistent chrome — hardware feedback 2026-05-29
+The Dashboard sidebar (nav + device card + agent card) vanishes when you open
+Devices/Activity/Settings, because each of those is a full-screen overlay with
+its own bespoke left rail — switching surfaces feels like jumping between
+different apps. Make the persistent sidebar (and its active-nav highlight) stay
+put across all surfaces, swapping only the main pane. This also closes the §7d
+gap: once the system check is green there's currently NO way to review system
+status (the inline check only shows during onboarding); a persistent "System"
+entry would restore that. (User flagged this directly during §7b verification.)
+
+### 7i. Don't offer "Connect over Wi-Fi" before pairing — **DONE 2026-05-29**
+On a fresh/new-user state the Devices rail showed "An iPhone is reachable over
+Wi-Fi" + a Connect button before any device was paired — but connecting/refreshing
+over Wi-Fi rides on the USB-minted pairing record, so the action couldn't work yet.
+Shipped: `WifiEmptyState`/`DevicesRail` now take a `paired` prop; when an iPhone is
+reachable but nothing has been paired, the rail shows an informational nudge
+("Plug it in over USB once to pair — then Wi-Fi refresh works on its own.") with
+NO Connect button. The gate is `hasPairedDevice = hasInstalls || pair.isSuccess`:
+a successful install is the persistent proof of a pairing (`installs.rs` writes the
+device's `pairing_status='paired'` row), and `pair.isSuccess` covers the just-
+-paired-this-session case before any install. NB: a dedicated `has_paired_device`
+backend command was considered and rejected — `pairing_status='paired'` is written
+ONLY on install, so it carries the same bit as `apps.length > 0`, for zero extra
+Rust/IPC surface. Frontend build green; **not yet hardware-verified**. Pairs with
+7f's Wi-Fi-vocabulary cleanup.
+
+### 7j. Modals stay light in dark mode — **DONE 2026-05-29**
+The install (`ImportModal`) and refresh (`RefreshModal`) dialogs rendered all-white
+even with dark mode on. Root cause was the documented theming gotcha: they render
+as siblings of `Dashboard`, OUTSIDE the `GnomeWindow` `data-theme` wrapper, so
+their `dark:` utilities (which compile to `[data-theme=dark] .dark\:…` descendant
+selectors) never matched. Fix: **hoisted a single `data-theme` onto ReSideApp's
+root div** (the chosen option). It anchors the dark-variant descendant selectors
+for EVERY surface — both modals and any future sibling — at one point; the per-
+window `data-theme` in `GnomeWindow` is now redundant but harmless (same value,
+same selector). **Follow-up (same day):** with the surfaces correctly Dracula
+(verified by pixel-sampling a static harness — card `#282a36`, footer `#21222c`,
+primary button purple), the one element still off-theme was the **native radio
+buttons** in the credential chooser, which kept the browser's default blue accent
+(`#99c8ff`). Added `accent-color: var(--dr-purple)` (dark) / `var(--ctp-mauve)`
+(light) for native `input[type=radio|checkbox]` in both theme sheets, and gave the
+modal close buttons a `dark:hover:text-slate-100` (they previously darkened to
+near-invisible on hover). Radios now render `#bd93f9`. **Follow-up 2 (from a live
+hardware screenshot):** the modal card itself was correct Dracula (`#282a36`), but
+the whole app *behind* it read bluer/colder (`#191d2b`) than the warm modal — a
+temperature clash the user flagged as "colors don't match." Root cause: the modal
+**backdrop scrim** was bare `bg-slate-900/40`, which Dracula never remaps, so it
+dimmed everything with stock cold `#0f172a`. Fixed by adding `dark:bg-slate-950/80`
+to both modals' backdrop (an already-remapped token → `#21222c` at 80% in dark),
+so the dim stays in the Dracula family with no blue cast; the lit modal still pops
+via its lighter `#282a36` surface. Verified by reversing the scrim math on the
+screenshot + re-rendering. **Follow-up 3 (live screenshot):** the "Install app"
+heading and the IPA filename had **no text-color class** — they inherited. Inside
+the dashboard that's fine (GnomeWindow's root sets a base `text-slate-900
+dark:text-slate-100`), but the modals render OUTSIDE GnomeWindow, so their
+uncolored text fell back to the browser default (near-black) instead of the
+Dracula foreground. Fixed by giving each modal card the same base text color
+(`text-slate-900 dark:text-slate-100` → `--dr-text #f8f8f2` in dark), which covers
+the heading, filename, and any other uncolored text at once. Frontend build green;
+**not yet hardware-verified**.
+
+## 8. Certificate count accuracy — hardware feedback 2026-05-29
+
+**Why:** on hardware, an install failed with Apple's ~2-cert cap while
+Settings → Certificates listed only **one**. Revoking it unstuck the install, but
+the mismatch means the UI's cert count can disagree with what Apple actually
+counts — confusing and a little alarming ("did I lose a cert?").
+
+**Likely causes:** (a) Apple's cap counts a **pending certificate request** (the
+7460 text is "…or a pending certificate request"), which is never an issued cert
+so `cert list` can't show it; and/or (b) `signer.rs::parse_cert_list` silently
+drops any cert whose line doesn't match the exact 3-backtick shape (a back-tick
+in the name, a wrapped line) — an invisible under-count.
+
+**Refinement 2026-05-29:** the user reports Settings has *always* shown only ONE
+cert, never two. That favors a **persistent** under-count (a consistently-dropped
+parse line, or `cert list` omitting a cert from another machine/context) over the
+transient pending-request theory. Their account is fine (revoke→reinstall leaves
+exactly 1, as expected). First diagnostic step is to capture the fork's raw
+`cert list` stdout for their account and diff it against what `parse_cert_list`
+keeps.
+
+**Scope:** make the listed count reconcile with the cap. Surface pending requests
+(or at least explain them in the cap message), and harden `parse_cert_list`
+against format variation instead of dropping rows; emit a "couldn't parse N
+lines" signal so a drop is visible, not silent.
+
+**Done when:** when signing fails at the cap, Settings shows enough to explain
+*why* (issued + pending), and no issued cert is ever silently missing. Validate
+on the user's account.
 
 ## Standing constraints
 

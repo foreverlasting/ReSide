@@ -119,8 +119,8 @@ export function ImportModal({
     !!path && !!device && !install.isPending && !credsMissing && (!needs2fa || twoFa.length > 0);
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm">
-      <div className="w-full max-w-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-slate-950/80 p-6 backdrop-blur-sm">
+      <div className="w-full max-w-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
           <Icon name="package" size={15} />
@@ -128,7 +128,7 @@ export function ImportModal({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
             <Icon name="x" size={14} />
           </button>

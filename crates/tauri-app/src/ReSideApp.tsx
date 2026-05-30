@@ -83,6 +83,13 @@ export function ReSideApp() {
   });
   const canEnableAgent = credStatus.data?.mode === "keyring";
 
+  // Has a device ever been paired? Wi-Fi refresh rides on the USB-minted pairing
+  // record, so the "Connect over Wi-Fi" affordance is gated on this (ROADMAP §7i).
+  // A successful install is the persistent proof of a pairing (it writes the
+  // device's `pairing_status='paired'` row); `pair.isSuccess` covers the just-
+  // -paired-this-session case before any install exists.
+  const hasInstalls = (apps.data?.length ?? 0) > 0;
+
   const deviceList = useMemo(() => devices.data ?? [], [devices.data]);
   // The device we'll pair: the explicitly-selected one, else the first seen.
   const target = useMemo(
@@ -94,6 +101,9 @@ export function ReSideApp() {
     mutationFn: (udid: string) => api.pairDevice(udid),
     onSuccess: () => devices.refetch(),
   });
+
+  // Combine the persistent (install record) and session (just-paired) signals.
+  const hasPairedDevice = hasInstalls || pair.isSuccess;
 
   // "Refresh all due" — the same due-check the background agent runs on a timer.
   const refreshAll = useMutation({
@@ -226,7 +236,14 @@ export function ReSideApp() {
   };
 
   return (
+    // `data-theme` is hoisted to the app root (not just each GnomeWindow) so it
+    // anchors the dark-variant *descendant* selectors for EVERY surface,
+    // including the install/refresh modals that render as siblings of the
+    // Dashboard — outside any GnomeWindow wrapper. Without this they kept their
+    // light values in dark mode (ROADMAP §7j). The per-window `data-theme` in
+    // GnomeWindow is now redundant but harmless (same value, same selector).
     <div
+      data-theme={dark ? "dark" : "light"}
       className="h-screen w-screen overflow-hidden"
       style={{ background: dark ? "#21222c" : "#dce0e8" }}
     >
@@ -241,6 +258,7 @@ export function ReSideApp() {
               error={devices.error}
               selectedUdid={target?.udid}
               onSelect={setSelectedUdid}
+              paired={hasPairedDevice}
               wifiReachable={wifiRailCheck.data?.available ?? false}
               wifiChecking={wifiRailCheck.isFetching}
               resolving={resolveWifi.isPending}
@@ -287,6 +305,7 @@ export function ReSideApp() {
             refreshingAll={refreshAll.isPending}
             sidebarNoDeviceFallback={
               <WifiEmptyState
+                paired={hasPairedDevice}
                 wifiReachable={wifiRailCheck.data?.available ?? false}
                 wifiChecking={wifiRailCheck.isFetching}
                 resolving={resolveWifi.isPending}
@@ -384,6 +403,7 @@ function DevicesRail({
   error,
   selectedUdid,
   onSelect,
+  paired = true,
   wifiReachable = false,
   wifiChecking = false,
   resolving = false,
@@ -395,6 +415,8 @@ function DevicesRail({
   error: unknown;
   selectedUdid?: string;
   onSelect: (udid: string) => void;
+  /** Whether any device has ever been paired — gates the Wi-Fi connect action. */
+  paired?: boolean;
   /** mDNS just spotted an iOS device on the LAN — we don't know its name yet. */
   wifiReachable?: boolean;
   /** A passive reachability check is in flight (the soft 3s mDNS poll). */
@@ -419,6 +441,7 @@ function DevicesRail({
       {devices.length === 0 ? (
         <WifiEmptyState
           error={error}
+          paired={paired}
           wifiReachable={wifiReachable}
           wifiChecking={wifiChecking}
           resolving={resolving}
@@ -472,6 +495,7 @@ function DevicesRail({
 /// 3. Nothing reachable → the original "Plug in your iPhone over USB." hint.
 export function WifiEmptyState({
   error,
+  paired = true,
   wifiReachable,
   wifiChecking,
   resolving,
@@ -480,6 +504,11 @@ export function WifiEmptyState({
   onRescanWifi,
 }: {
   error?: unknown;
+  /** Whether a device has ever been paired (an install record exists). Wi-Fi
+   *  refresh rides on the USB-minted pairing record, so "Connect over Wi-Fi" is
+   *  offered ONLY once paired; before that we nudge the user to pair over USB
+   *  first instead of dangling an action that can't work yet (ROADMAP §7i). */
+  paired?: boolean;
   wifiReachable: boolean;
   wifiChecking: boolean;
   resolving: boolean;
@@ -490,6 +519,21 @@ export function WifiEmptyState({
   if (error) {
     return (
       <div className="text-[11.5px] text-slate-500">{asCommandError(error).remediation}</div>
+    );
+  }
+
+  // Reachable on Wi-Fi but never paired: connecting/refreshing needs a pairing
+  // record that only a USB pair creates, so point there rather than offer Connect.
+  if (wifiReachable && !paired) {
+    return (
+      <div className="space-y-1.5">
+        <div className="text-[11.5px] text-slate-600 dark:text-slate-300">
+          An iPhone is on Wi-Fi.
+        </div>
+        <div className="text-[10.5px] text-slate-500">
+          Plug it in over USB once to pair — then Wi-Fi refresh works on its own.
+        </div>
+      </div>
     );
   }
 

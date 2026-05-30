@@ -10,7 +10,7 @@ Section numbers (§1, §7h, …) are stable labels — they're referenced from c
 messages and notes, so they're preserved even though the items are now ordered by
 priority rather than by number.
 
-## Current state (2026-05-29)
+## Current state (2026-05-30)
 
 Functionally complete and hardware-validated: sign + install over USB **and**
 Wi-Fi, auto-refresh engine + unattended systemd agent, 3-tier credentials, UX
@@ -19,114 +19,19 @@ fork (`foreverlasting/Sideloader`, branch `reside-automation`), and the
 **v0.4.1 release** (`ReSide-0.4.1-linux-x86_64.tar.gz`, sha256
 `6312a2dfa81029b0f220235f7f984efc798e58e2bf54a6231875e1934f70bf57`).
 
-**Merged:** PR #16 (`ux-modals-wifi-gate` → main) — §7i + §7j. PR #17
-(`ux-persistent-sidebar` → the `ux-modals-wifi-gate` integration branch) — §7h.
-**Main does not yet carry §7h:** it lives on `ux-modals-wifi-gate` (`ad8f3a6`),
-waiting on that branch's next merge up. Both upstream merges were squashes, so
-local feature branches no longer share clean ancestry — stack new work on the
-integration branch, not on the orphaned per-feature branches.
+**The entire §7 UX line is now on `main` and hardware-verified** — persistent
+sidebar (§7h), System view (§7d gap closed), Activity view (§7a), and the Devices
+in-shell pane + trust modal (§7e/§7f). It landed across PR #15 (§7a–g), #16
+(§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All `ux-*` feature
+branches are merged + deleted.
 
-**In flight:** §7e + §7f (`ux-devices-pane`, stacked on `ux-modals-wifi-gate`) —
-Devices becomes an in-shell pane; build green, not yet hardware-verified.
-
-**Hardware-verified 2026-05-30:** §7e + §7f (Devices pane). §7h (persistent
-sidebar) is verified by extension — the Devices pane runs *inside* the persistent
-shell, so navigating it on hardware exercises §7h.
-
-**Pending hardware verification** (built + green, not yet confirmed on the user's
-device): §7a Activity view.
+**`main` is unreleased, ahead of v0.4.1** — next step is a release cut: version
+bump to **0.5.0**, then the §5 tarball. §7a Activity view is the one piece only
+observed populating (no explicit hardware sign-off).
 
 ---
 
 # Remaining work
-
-## §7h. Persistent sidebar / consistent chrome — MERGED 2026-05-30 (PR #17 → `ux-modals-wifi-gate`; not yet on main; hardware-verified via §7e/§7f)
-
-**Why:** hardware feedback 2026-05-29 (user flagged directly during §7b verify).
-The Dashboard sidebar (nav + device card + agent card) vanishes when you open
-Devices/Activity/Settings, because each of those is a full-screen overlay with
-its own bespoke left rail — switching surfaces feels like jumping between
-different apps.
-
-**Scope:** make the persistent sidebar (and its active-nav highlight) stay put
-across all surfaces, swapping only the main pane. This also closes the §7d gap:
-once the system check is green there's currently NO way to review system status
-(the inline check only shows during onboarding); a persistent **System** entry
-would restore that.
-
-**Done when:** sidebar + active-nav highlight persist across Dashboard / Devices /
-Activity / Settings / System; only the main pane swaps. Validate on hardware.
-
-**Implementation plan (chosen scope: persistent sidebar + System view; Pairing
-stays an on-demand overlay — the Devices/Pairing rework is left to §7f):**
-
-*Target:* one `GnomeWindow` + one `Sidebar` rendered once in `ReSideApp`; a
-`surface` state (`"apps" | "activity" | "settings" | "system"`) picks the main
-pane. Pairing is a transient overlay layered on top. Install/refresh modals stay
-siblings under the root `data-theme` node — §7j is untouched. No Rust changes;
-frontend-only.
-
-Files & changes, in order:
-1. **`components/chrome.tsx`** — add a **System** nav item (icon `shieldCheck`);
-   stop hardcoding `Sidebar.active` (caller passes the live surface so the
-   highlight tracks it); extract an `AppShell` (GnomeWindow + Sidebar +
-   `<main>{children}</main>`) so screens stop re-implementing the scaffold.
-2. **`ReSideApp.tsx`** — replace the `Overlay` type with a `surface` state
-   (default `"apps"`); Pairing becomes its own `pairingOpen` overlay. Render
-   `AppShell` once with the live device/agent/Wi-Fi props (lifted up from
-   Dashboard), then `switch(surface)` for the pane. `onNavigate`:
-   apps/activity/settings/system set `surface`; devices opens the Pairing overlay.
-   Drop the per-screen `toolbarExtra`/`onClose`/"Done" plumbing.
-3. **`screens/Dashboard.tsx` → Apps pane** — remove its own `GnomeWindow` +
-   `Sidebar`; keep the `<main>` content (headline, Get-Started panel, app grid).
-4. **`screens/Settings.tsx` → Settings pane** — remove `GnomeWindow` + the
-   bespoke 260px rail + "Done" footer; keep Certificates + Apple ID sections.
-   Drop `railExtra` (sidebar already shows the device/Wi-Fi card); relocate or
-   drop the two tip cards.
-5. **`screens/Activity.tsx` → Activity pane** — same surgery; keep header + list.
-6. **New `screens/System.tsx`** — renders the setup-check report (backend/tunnel
-   pills + dependency rows + "Run check"), reusing `InlineSystemCheck`/
-   `InlineCheckRow` extracted out of `Dashboard.tsx`, wired to the `setup` query
-   already in `ReSideApp`. Closes the §7d gap.
-7. **`Gallery.tsx`** — wrap the now-pane-only mock screens in `AppShell` so the
-   full-window previews still render.
-
-Work order: chrome → ReSideApp → Apps pane → Settings pane → Activity pane →
-System pane → Gallery fixups → `pnpm` build/typecheck gate → hardware verify.
-
-Risks: (1) **Gallery coupling** — `Dashboard`/`Settings`/`Setup` double as
-full-window mock screens; they must be re-wrapped in `AppShell` in gallery mode.
-(2) **Pairing inconsistency** — Devices nav pops an overlay while others swap
-panes; an intentional gap parked for §7f. (3) **Lifting device/agent data** up to
-the shell so every surface shows identical live state (ReSideApp already owns the
-queries). (4) Minor per-surface subtitle/tip-card copy.
-
-**What shipped (branch `ux-persistent-sidebar`):** the plan held, with three
-deviations that made it *simpler*:
-- **No `AppShell` wrapper.** Since `Gallery` only renders `Dashboard` (not
-  Settings/Activity), the cleanest single-instance persistence was to keep
-  `Dashboard` as the live shell and keep it mounted. It gained `active`,
-  `mainContent`, and `subtitleOverride` props; ReSideApp renders ONE `<Dashboard
-  live>` always and swaps `mainContent` (— → Apps; `<Settings/>` / `<Activity/>` /
-  `<System/>`). The sidebar, window chrome, and toolbar never unmount. So risk (1)
-  evaporated — Gallery needed **no** changes.
-- **Settings & Activity became panes** (stripped their `GnomeWindow` + bespoke
-  rail + "Done" footer; nav is the way out). The Settings keyring note was
-  relocated into the pane body; the rail tip cards were dropped.
-- **New `screens/System.tsx`** renders the dependency check standalone (reuses
-  `InlineSystemCheck`, now exported with an `inset` prop), wired to the existing
-  `setup` query via the hoisted `getStarted` handlers. Sidebar gained a **System**
-  nav item (`shieldCheck`). Closes the §7d gap.
-- **Dropped the multi-device `DevicesRail` + per-device selection** (`selectedUdid`)
-  — it only ever lived in the old Settings rail; `target` is now the first detected
-  device, and choosing among several plugged-in devices is folded into the §7f
-  Devices-surface work.
-
-ReSideApp now tracks a `surface` state (`apps|activity|settings|system`) plus a
-separate `pairingOpen` overlay (Devices nav). Frontend build (`tsc --noEmit &&
-vite build`) is green; no Rust touched. **Left to do: hardware verify** — click
-Apps → Activity → System → Settings and confirm the sidebar + highlight stay put
-and only the pane swaps; confirm the new System view shows the dep check.
 
 ## §8. Certificate count accuracy
 
@@ -156,47 +61,6 @@ signal so a drop is visible, not silent.
 **Done when:** when signing fails at the cap, Settings shows enough to explain
 *why* (issued + pending), and no issued cert is ever silently missing. Validate on
 the user's account.
-
-## §7f. Devices surface + Wi-Fi vocabulary — DONE + HARDWARE-VERIFIED 2026-05-30 (`ux-devices-pane`, PR #18; auto-chain deferred)
-
-**Why:** Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi was four manual
-clicks across a full-screen overlay; hardware feedback 2026-05-29 questioned whether
-the buttons did anything and whether the Devices screen was even needed. They DO call
-live backend commands — the manual chain was the clunk.
-
-**What shipped:** "Devices" is now a first-class in-shell pane (`screens/Devices.tsx`)
-rendered through the persistent shell's `mainContent` (like System/Activity/Settings),
-not a takeover — answering "is this screen needed?" with a real device *manager*.
-Single-device-first: a switcher row appears only when >1 device. A **connection ladder**
-(Paired → Developer Mode → Secure tunnel → Wi-Fi refresh) replaces the scattered
-panels, with downstream rungs `locked` behind the current blocker so exactly one
-action is live; warn/error/remediation copy is ported from the old
-`DevModeGate`/`TunnelPanel`/`WifiPanel`. The three Wi-Fi entry points now read as one
-concept: the ladder's Wi-Fi rung for a connected device, the sidebar `WifiEmptyState`
-+ cold-start nudge for an unpaired one. `selectedUdid` now drives `target`, so the
-per-device queries re-scope — the multi-device selection §7h deferred has a home.
-Developer Mode is gated on the *standing* paired state, not the transient pair phase.
-No "Forget device" control (there's no backend unpair — §7b dead-control rule).
-Design artboards in `docs/artboards/devices-pane*.html`.
-
-**Deferred (still open):** true **auto-chain** — auto-running the tunnel + Wi-Fi check
-after a successful pair when Dev Mode is on. The ladder makes the manual chain legible
-(one live action at a time) but still requires the clicks. Multi-device readiness also
-still rides the install-coupled `pairing_status` (§7i) — exact for one device,
-approximate for several; a per-device paired signal is the real fix.
-
-## §7e. De-duplicate onboarding — DONE + HARDWARE-VERIFIED 2026-05-30 (`ux-devices-pane`, PR #18)
-
-**Why:** the Pairing overlay re-presented a "Setup · step 2 of 3" wizard rail that
-duplicated the Dashboard `GetStartedPanel` and was misleading (an on-demand overlay,
-not step 2 of a linear flow); its two footer CTAs ("Skip — USB only" / "Enable Wi-Fi
-refresh") both just closed it.
-
-**What shipped:** pairing is no longer a full-screen overlay at all. The transient
-trust handshake became a focused modal (`screens/PairModal.tsx`, the ImportModal
-pattern) with a single honest action — no fake wizard rail, no dual closing CTAs.
-Everything *after* the handshake (Dev Mode / tunnel / Wi-Fi) moved to the §7f Devices
-pane's ladder. The gallery-only artboard (`screens/Pairing.tsx`) is untouched.
 
 ## §4. AUR packaging
 
@@ -230,6 +94,21 @@ non-interactive login) and is good open-source citizenship.
 **Scope:** open a PR to `Dadoum/Sideloader` from `673db69`.
 
 **Done when:** the PR is open upstream.
+
+## §7k. Pairing auto-chain + per-device paired signal — polish (deferred from §7f)
+
+**Why:** the §7f connection ladder makes the manual chain legible (one live action
+at a time) but a successful pair still needs manual clicks through Dev Mode →
+tunnel → Wi-Fi. And multi-device readiness rides the install-coupled
+`pairing_status` (§7i) — exact for one device, approximate for several.
+
+**Scope:** auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode
+is on (the ladder's later rungs advance on their own). Add a per-device paired
+signal so the ladder reflects the *selected* device, not the global `hasInstalls`
+bit.
+
+**Done when:** a successful pair auto-advances the ladder to a Wi-Fi-ready state
+with no extra clicks, and the ladder's readiness is per-device. Validate on hardware.
 
 ---
 
@@ -291,6 +170,28 @@ Condensed; load-bearing gotchas retained.
   blue); `dark:bg-slate-950/80` on the modal backdrop scrim (bare `slate-900/40`
   isn't Dracula-remapped → cold cast); and base `text-slate-900 dark:text-slate-100`
   on each modal card (uncolored text fell back to near-black outside GnomeWindow).
+- **§7h. Persistent sidebar / consistent chrome** — DONE 2026-05-30, hardware-verified
+  (via §7e/§7f), on main (PR #19). One `<Dashboard live>` stays mounted as the shell;
+  a `surface` state (`apps|devices|activity|settings|system`) swaps only `mainContent`
+  while sidebar/chrome/toolbar persist (gained `active`/`mainContent`/`subtitleOverride`
+  props — no `AppShell`, since Gallery only renders Dashboard). Settings & Activity
+  became panes (dropped GnomeWindow + bespoke rail + "Done" footer). New
+  `screens/System.tsx` renders the dep check standalone (reuses `InlineSystemCheck`,
+  exported with an `inset` prop) — closes the §7d gap; sidebar gained a **System** nav item.
+- **§7e. De-duplicate onboarding** — DONE 2026-05-30, hardware-verified, on main (PR #19).
+  Pairing is no longer a full-screen overlay: the trust handshake became a focused modal
+  (`screens/PairModal.tsx`, ImportModal pattern) with one honest action — the fake
+  "Setup · step 2 of 3" wizard rail and the dual closing CTAs are gone. Post-handshake
+  steps moved to the §7f ladder. `screens/Pairing.tsx` kept as the gallery-only artboard.
+- **§7f. Devices surface + Wi-Fi vocabulary** — DONE 2026-05-30, hardware-verified, on
+  main (PR #19). "Devices" is a first-class in-shell pane (`screens/Devices.tsx`) via the
+  shell's `mainContent`, not a takeover. Single-device-first (switcher only when >1
+  device); a **connection ladder** (Paired → Developer Mode → Secure tunnel → Wi-Fi
+  refresh) with downstream rungs `locked` behind the current blocker; warn/error copy
+  ported from the old DevModeGate/TunnelPanel/WifiPanel. `selectedUdid` drives `target`
+  so per-device queries re-scope. Developer Mode gated on the STANDING paired state, not
+  the transient pair phase. No "Forget" control (no backend unpair — §7b rule). Artboards
+  in `docs/artboards/devices-pane*.html`. **Deferred → §7k.**
 
 ## Standing constraints
 

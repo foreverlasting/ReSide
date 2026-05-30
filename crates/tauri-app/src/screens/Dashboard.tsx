@@ -52,6 +52,7 @@ export function Dashboard({
   dark = false,
   empty = false,
   live = false,
+  active = "apps",
   device,
   apps = [],
   toolbarExtra,
@@ -67,10 +68,15 @@ export function Dashboard({
   onToggleAgent,
   getStarted,
   sidebarNoDeviceFallback,
+  mainContent,
+  subtitleOverride,
 }: {
   dark?: boolean;
   empty?: boolean;
   live?: boolean;
+  /** Which sidebar nav item is highlighted. Live mode swaps this as the user
+   *  navigates; gallery mode stays on "apps". */
+  active?: string;
   device?: DeviceInfo | null;
   apps?: InstalledApp[];
   toolbarExtra?: ReactNode;
@@ -88,6 +94,13 @@ export function Dashboard({
   /** Replaces the Sidebar's "No devices paired" hint with a richer Wi-Fi
    *  banner + "Connect over Wi-Fi" button. ReSideApp owns the wifi state. */
   sidebarNoDeviceFallback?: ReactNode;
+  /** Live-only: when set, this replaces the entire `<main>` pane (the Apps
+   *  header + body). It's how ReSideApp keeps ONE Dashboard — and one persistent
+   *  sidebar — mounted while swapping in the Activity / Settings / System panes
+   *  (ROADMAP §7h). The sidebar, window chrome, and toolbar stay put. */
+  mainContent?: ReactNode;
+  /** Overrides the window subtitle for non-Apps surfaces (e.g. "Settings"). */
+  subtitleOverride?: ReactNode;
 }) {
   const hasApps = live ? apps.length > 0 : !empty;
   const hasDevice = !!device;
@@ -131,7 +144,7 @@ export function Dashboard({
   return (
     <GnomeWindow
       title="ReSide"
-      subtitle={subtitle}
+      subtitle={subtitleOverride ?? subtitle}
       dark={dark}
       toolbar={
         live ? (
@@ -153,7 +166,7 @@ export function Dashboard({
       <div className="flex h-full">
         {live ? (
           <Sidebar
-            active="apps"
+            active={active}
             device={device ?? null}
             agentActive={agentEnabled}
             agentDetail={agentDetail}
@@ -165,6 +178,8 @@ export function Dashboard({
         )}
 
         <main className="flex min-w-0 flex-1 flex-col">
+          {mainContent ?? (
+          <>
           {/* Header */}
           <div className="flex shrink-0 items-end justify-between gap-6 border-b border-slate-200 px-6 pb-4 pt-5 dark:border-slate-800">
             <div className="min-w-0">
@@ -241,6 +256,8 @@ export function Dashboard({
             <LiveApps apps={apps} onRefreshApp={onRefreshApp} />
           ) : (
             <FilledDashboard />
+          )}
+          </>
           )}
         </main>
       </div>
@@ -422,10 +439,12 @@ function GetStartedStep({
   );
 }
 
-function InlineSystemCheck({ gs }: { gs: GetStartedHandlers }) {
+// `inset` (default) indents + spaces the panel for the onboarding step it nests
+// under; the System pane renders it standalone with `inset={false}`.
+export function InlineSystemCheck({ gs, inset = true }: { gs: GetStartedHandlers; inset?: boolean }) {
   const items = gs.report?.items ?? [];
   return (
-    <div className="ml-11 mt-4 rounded-lg border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40">
+    <div className={cn(inset && "ml-11 mt-4", "rounded-lg border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40")}>
       <div className="divide-y divide-slate-200 dark:divide-slate-800">
         {items.length === 0 ? (
           <div className="px-3 py-3 text-[12px] text-slate-500">Running check…</div>

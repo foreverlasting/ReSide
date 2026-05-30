@@ -9,31 +9,34 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "./screens/Settings";
 import { Activity } from "./screens/Activity";
-import { Dashboard } from "./screens/Dashboard";
+import { System } from "./screens/System";
+import { Dashboard, type GetStartedHandlers } from "./screens/Dashboard";
 import { ImportModal } from "./screens/ImportModal";
 import { RefreshModal } from "./screens/RefreshModal";
-import {
-  Pairing,
-  type DevModeState,
-  type PairPhase,
-  type TunnelPhase,
-  type WifiPhase,
+import { Devices } from "./screens/Devices";
+import { PairModal } from "./screens/PairModal";
+import type {
+  DevModeState,
+  PairPhase,
+  TunnelPhase,
+  WifiPhase,
 } from "./screens/Pairing";
 import {
   api,
   asCommandError,
   isTauri,
   type CommandError,
-  type DeviceInfo,
   type InstalledApp,
 } from "./lib/ipc";
 import { Icon } from "./components/ui";
 import { cn } from "./lib/cn";
 
-// On-demand surfaces layered over the always-present dashboard. The detailed
-// "system" view is intentionally absent: the Dashboard's inline system check is
-// the single source for that (ROADMAP §7d).
-type Overlay = "pairing" | "settings" | "activity" | null;
+// The main pane shown inside the persistent shell. The sidebar, window chrome,
+// and toolbar stay put across all of these — only this pane swaps (ROADMAP §7h).
+// "devices" is now a first-class pane too (ROADMAP §7e/§7f): the old full-screen
+// Pairing takeover is gone. The only transient overlay left is the focused trust
+// handshake (`PairModal`, `pairModalOpen`), opened from the Devices pane.
+type Surface = "apps" | "devices" | "activity" | "settings" | "system";
 
 const THEME_KEY = "reside-theme";
 
@@ -55,9 +58,12 @@ export function ReSideApp() {
       /* storage unavailable — theme just won't persist this session */
     }
   }, [dark]);
-  const [overlay, setOverlay] = useState<Overlay>(null);
-  const [systemCheckExpanded, setSystemCheckExpanded] = useState(false);
+  const [surface, setSurface] = useState<Surface>("apps");
+  const [pairModalOpen, setPairModalOpen] = useState(false);
+  // Which device the panes act on. Defaults to the first detected; the Devices
+  // switcher lets the user pick another when several are plugged in.
   const [selectedUdid, setSelectedUdid] = useState<string | null>(null);
+  const [systemCheckExpanded, setSystemCheckExpanded] = useState(false);
   const [importing, setImporting] = useState(false);
   const [refreshTarget, setRefreshTarget] = useState<InstalledApp | null>(null);
   const queryClient = useQueryClient();
@@ -91,7 +97,9 @@ export function ReSideApp() {
   const hasInstalls = (apps.data?.length ?? 0) > 0;
 
   const deviceList = useMemo(() => devices.data ?? [], [devices.data]);
-  // The device we'll pair: the explicitly-selected one, else the first seen.
+  // The device the panes act on: the user's selection in the Devices switcher,
+  // falling back to the first detected one (ROADMAP §7f). All the per-device
+  // queries below key off this, so changing the selection re-scopes them.
   const target = useMemo(
     () => deviceList.find((d) => d.udid === selectedUdid) ?? deviceList[0],
     [deviceList, selectedUdid]
@@ -127,24 +135,26 @@ export function ReSideApp() {
         ? "error"
         : "idle";
 
-  // Once paired, read Developer Mode over the trusted amfi service. iOS 17.4+
-  // requires it for install flows, so we gate on it right after pairing.
+  // Read Developer Mode over the trusted amfi service. iOS 17.4+ requires it for
+  // install flows. Gated on the *standing* paired state (an install record, or a
+  // just-completed pair) rather than the transient pair phase, so the Devices
+  // ladder shows it whenever there's a paired device — not only right after the
+  // handshake. Re-keys (and refetches) when the switcher changes `target`.
   const devMode = useQuery({
     queryKey: ["dev-mode", target?.udid],
     queryFn: () => api.developerModeStatus(target!.udid),
-    enabled: phase === "paired" && !!target,
+    enabled: isTauri() && !!target && hasPairedDevice,
   });
 
-  const developerMode: DevModeState =
-    phase !== "paired"
-      ? "idle"
-      : devMode.isError
-        ? "unknown"
-        : devMode.data === true
-          ? "on"
-          : devMode.data === false
-            ? "off"
-            : "checking";
+  const developerMode: DevModeState = !hasPairedDevice
+    ? "idle"
+    : devMode.isError
+      ? "unknown"
+      : devMode.data === true
+        ? "on"
+        : devMode.data === false
+          ? "off"
+          : "checking";
 
   // Once Developer Mode is confirmed on, the device is ready for the RSD tunnel
   // — the gateway to install + Wi-Fi refresh. Establish it on demand.
@@ -228,11 +238,35 @@ export function ReSideApp() {
     </div>
   );
 
-  const closeOverlay = () => {
+  // The trust modal owns only the handshake; the tunnel/Wi-Fi mutations now live
+  // in the Devices ladder, so opening/closing the modal must NOT reset them.
+  // Each open starts the handshake fresh; close just hides it, preserving
+  // `pair.isSuccess` so the ladder's "Paired" rung stays lit afterwards.
+  const openPairModal = () => {
     pair.reset();
-    tunnelEstablish.reset();
-    wifiCheck.reset();
-    setOverlay(null);
+    setPairModalOpen(true);
+    setSurface("devices");
+  };
+  const closePairModal = () => setPairModalOpen(false);
+
+  // Pairing is USB-only; a Wi-Fi-resolved card can't mint a pairing record.
+  const canPair = !!target && !target.wifi;
+
+  // The onboarding/system-check handlers, shared by the Dashboard's inline "Get
+  // Started" panel and the standing System pane (ROADMAP §7h/§7d).
+  const getStarted: GetStartedHandlers = {
+    systemReady,
+    report: setup.data,
+    expanded: systemCheckExpanded,
+    rerunning: setup.isFetching,
+    onRunCheck: () => {
+      setSystemCheckExpanded(true);
+      setup.refetch();
+    },
+    onPair: openPairModal,
+    onEnableAgent: () => setAgent.mutate(true),
+    agentBusy: setAgent.isPending,
+    canEnableAgent,
   };
 
   return (
@@ -247,131 +281,132 @@ export function ReSideApp() {
       className="h-screen w-screen overflow-hidden"
       style={{ background: dark ? "#21222c" : "#dce0e8" }}
     >
-      {overlay === "settings" ? (
-        <Settings
-          dark={dark}
-          onClose={closeOverlay}
-          toolbarExtra={toolbarExtra}
-          railExtra={
-            <DevicesRail
+      {/* ONE Dashboard — and one persistent sidebar — stays mounted across every
+          surface; `mainContent` swaps only the right-hand pane, and `active`
+          moves the nav highlight (ROADMAP §7h). The trust handshake is the only
+          overlay now — a sibling modal below, not a takeover (ROADMAP §7e/§7f). */}
+      <Dashboard
+        dark={dark}
+        live
+        active={surface}
+        subtitleOverride={
+          surface === "settings"
+            ? "Settings"
+            : surface === "devices"
+              ? "Devices"
+              : surface === "activity"
+                ? "Activity"
+                : surface === "system"
+                  ? "System"
+                  : undefined
+        }
+        mainContent={
+          surface === "settings" ? (
+            <Settings />
+          ) : surface === "devices" ? (
+            <Devices
               devices={deviceList}
-              error={devices.error}
-              selectedUdid={target?.udid}
+              selectedUdid={target?.udid ?? null}
               onSelect={setSelectedUdid}
               paired={hasPairedDevice}
+              developerMode={developerMode}
+              tunnelPhase={tunnelPhase}
+              tunnelStatus={tunnelEstablish.data}
+              tunnelError={tunnelEstablish.error ? asCommandError(tunnelEstablish.error) : null}
+              wifiPhase={wifiPhase}
+              wifiAvailability={wifiCheck.data}
+              wifiError={wifiCheck.error ? asCommandError(wifiCheck.error) : null}
+              onPair={canPair ? openPairModal : undefined}
+              onRecheckDevMode={() => devMode.refetch()}
+              onEstablishTunnel={() => target && tunnelEstablish.mutate(target.udid)}
+              onCheckWifi={() => wifiCheck.mutate()}
               wifiReachable={wifiRailCheck.data?.available ?? false}
               wifiChecking={wifiRailCheck.isFetching}
               resolving={resolveWifi.isPending}
               resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
-              onConnectWifi={() => resolveWifi.mutate()}
+              onConnectWifi={hasPairedDevice ? () => resolveWifi.mutate() : undefined}
               onRescanWifi={() => wifiRailCheck.refetch()}
             />
-          }
-        />
-      ) : overlay === "activity" ? (
-        <Activity dark={dark} onClose={closeOverlay} toolbarExtra={toolbarExtra} />
-      ) : overlay === "pairing" ? (
-        <Pairing
-          dark={dark}
-          device={target}
+          ) : surface === "activity" ? (
+            <Activity />
+          ) : surface === "system" ? (
+            <System gs={getStarted} />
+          ) : undefined
+        }
+        device={target ?? null}
+        apps={apps.data ?? []}
+        toolbarExtra={toolbarExtra}
+        onImport={target ? () => setImporting(true) : undefined}
+        onRefreshApp={(app) => setRefreshTarget(app)}
+        onRefreshAll={() => refreshAll.mutate()}
+        refreshingAll={refreshAll.isPending}
+        sidebarNoDeviceFallback={
+          <WifiEmptyState
+            paired={hasPairedDevice}
+            wifiReachable={wifiRailCheck.data?.available ?? false}
+            wifiChecking={wifiRailCheck.isFetching}
+            resolving={resolveWifi.isPending}
+            resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
+            onConnectWifi={() => resolveWifi.mutate()}
+            onRescanWifi={() => wifiRailCheck.refetch()}
+          />
+        }
+        agentEnabled={agent.data?.enabled ?? false}
+        agentDetail={agent.data?.detail}
+        agentBusy={setAgent.isPending}
+        agentError={setAgent.error ? asCommandError(setAgent.error).remediation : null}
+        onToggleAgent={(enabled) => setAgent.mutate(enabled)}
+        getStarted={getStarted}
+        onNavigate={(id) => {
+          if (
+            id === "apps" ||
+            id === "devices" ||
+            id === "activity" ||
+            id === "settings" ||
+            id === "system"
+          )
+            setSurface(id);
+        }}
+      />
+      {pairModalOpen && (
+        <PairModal
+          device={target ?? null}
           phase={phase}
           error={pair.error ? asCommandError(pair.error) : null}
-          developerMode={developerMode}
-          tunnelPhase={tunnelPhase}
-          tunnelStatus={tunnelEstablish.data}
-          tunnelError={tunnelEstablish.error ? asCommandError(tunnelEstablish.error) : null}
-          wifiPhase={wifiPhase}
-          wifiAvailability={wifiCheck.data}
-          wifiError={wifiCheck.error ? asCommandError(wifiCheck.error) : null}
-          onEstablishTunnel={() => target && tunnelEstablish.mutate(target.udid)}
-          onCheckWifi={() => wifiCheck.mutate()}
           onPair={() => target && pair.mutate(target.udid)}
-          onRecheckDevMode={() => devMode.refetch()}
-          onSkip={closeOverlay}
-          onContinue={closeOverlay}
-          onBack={closeOverlay}
+          onClose={closePairModal}
         />
-      ) : (
-        <>
-          <Dashboard
-            dark={dark}
-            live
-            device={target ?? null}
-            apps={apps.data ?? []}
-            toolbarExtra={toolbarExtra}
-            onImport={target ? () => setImporting(true) : undefined}
-            onRefreshApp={(app) => setRefreshTarget(app)}
-            onRefreshAll={() => refreshAll.mutate()}
-            refreshingAll={refreshAll.isPending}
-            sidebarNoDeviceFallback={
-              <WifiEmptyState
-                paired={hasPairedDevice}
-                wifiReachable={wifiRailCheck.data?.available ?? false}
-                wifiChecking={wifiRailCheck.isFetching}
-                resolving={resolveWifi.isPending}
-                resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
-                onConnectWifi={() => resolveWifi.mutate()}
-                onRescanWifi={() => wifiRailCheck.refetch()}
-              />
-            }
-            agentEnabled={agent.data?.enabled ?? false}
-            agentDetail={agent.data?.detail}
-            agentBusy={setAgent.isPending}
-            agentError={setAgent.error ? asCommandError(setAgent.error).remediation : null}
-            onToggleAgent={(enabled) => setAgent.mutate(enabled)}
-            getStarted={{
-              systemReady,
-              report: setup.data,
-              expanded: systemCheckExpanded,
-              rerunning: setup.isFetching,
-              onRunCheck: () => {
-                setSystemCheckExpanded(true);
-                setup.refetch();
-              },
-              onPair: () => setOverlay("pairing"),
-              onEnableAgent: () => setAgent.mutate(true),
-              agentBusy: setAgent.isPending,
-              canEnableAgent,
-            }}
-            onNavigate={(id) => {
-              if (id === "apps") setOverlay(null);
-              else if (id === "devices") setOverlay("pairing");
-              else if (id === "activity") setOverlay("activity");
-              else if (id === "settings") setOverlay("settings");
-            }}
-          />
-          {importing && (
-            <ImportModal
-              device={target ?? null}
-              onClose={() => {
-                setImporting(false);
-                // A session/ask sign-in may have changed where creds live.
-                credStatus.refetch();
-              }}
-              onInstalled={() => {
-                setImporting(false);
-                apps.refetch();
-                // Reflect a fresh keyring sign-in so auto-refresh can be enabled.
-                credStatus.refetch();
-              }}
-              onManageCerts={() => {
-                setImporting(false);
-                setOverlay("settings");
-              }}
-            />
-          )}
-          {refreshTarget && (
-            <RefreshModal
-              app={refreshTarget}
-              onClose={() => setRefreshTarget(null)}
-              onRefreshed={() => apps.refetch()}
-              onManageCerts={() => {
-                setRefreshTarget(null);
-                setOverlay("settings");
-              }}
-            />
-          )}
-        </>
+      )}
+      {importing && (
+        <ImportModal
+          device={target ?? null}
+          onClose={() => {
+            setImporting(false);
+            // A session/ask sign-in may have changed where creds live.
+            credStatus.refetch();
+          }}
+          onInstalled={() => {
+            setImporting(false);
+            apps.refetch();
+            // Reflect a fresh keyring sign-in so auto-refresh can be enabled.
+            credStatus.refetch();
+          }}
+          onManageCerts={() => {
+            setImporting(false);
+            setSurface("settings");
+          }}
+        />
+      )}
+      {refreshTarget && (
+        <RefreshModal
+          app={refreshTarget}
+          onClose={() => setRefreshTarget(null)}
+          onRefreshed={() => apps.refetch()}
+          onManageCerts={() => {
+            setRefreshTarget(null);
+            setSurface("settings");
+          }}
+        />
       )}
     </div>
   );
@@ -398,95 +433,7 @@ function StatusPill({
   );
 }
 
-function DevicesRail({
-  devices,
-  error,
-  selectedUdid,
-  onSelect,
-  paired = true,
-  wifiReachable = false,
-  wifiChecking = false,
-  resolving = false,
-  resolveError = null,
-  onConnectWifi,
-  onRescanWifi,
-}: {
-  devices: DeviceInfo[];
-  error: unknown;
-  selectedUdid?: string;
-  onSelect: (udid: string) => void;
-  /** Whether any device has ever been paired — gates the Wi-Fi connect action. */
-  paired?: boolean;
-  /** mDNS just spotted an iOS device on the LAN — we don't know its name yet. */
-  wifiReachable?: boolean;
-  /** A passive reachability check is in flight (the soft 3s mDNS poll). */
-  wifiChecking?: boolean;
-  /** "Connect over Wi-Fi" is currently spinning netmuxd up + waiting on discovery. */
-  resolving?: boolean;
-  resolveError?: CommandError | null;
-  /** Click handler for the "Connect over Wi-Fi" button. */
-  onConnectWifi?: () => void;
-  /** Optional manual rescan of the mDNS reachability check. */
-  onRescanWifi?: () => void;
-}) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-        <Icon name="smartphone" size={12} />
-        Devices
-        <span className="ml-auto font-normal normal-case text-slate-400">
-          {error ? "usbmuxd?" : `${devices.length}`}
-        </span>
-      </div>
-      {devices.length === 0 ? (
-        <WifiEmptyState
-          error={error}
-          paired={paired}
-          wifiReachable={wifiReachable}
-          wifiChecking={wifiChecking}
-          resolving={resolving}
-          resolveError={resolveError}
-          onConnectWifi={onConnectWifi}
-          onRescanWifi={onRescanWifi}
-        />
-      ) : (
-        <div className="space-y-1.5">
-          {devices.map((d) => (
-            <button
-              key={d.udid}
-              onClick={() => onSelect(d.udid)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left transition-colors",
-                d.udid === selectedUdid
-                  ? "bg-slate-100 dark:bg-slate-800"
-                  : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-flex h-2 w-2 shrink-0 rounded-full",
-                  d.supported ? "bg-emerald-500" : "bg-red-500"
-                )}
-              />
-              <span className="truncate text-[12px] font-medium text-slate-800 dark:text-slate-200">
-                {d.name ?? `${d.udid.slice(0, 8)}…`}
-              </span>
-              <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-slate-500">
-                {d.iosVersion && <span>iOS {d.iosVersion}</span>}
-                <span className="rounded border border-slate-300 px-1 dark:border-slate-700">
-                  {d.wifi ? "Wi-Fi" : d.connection}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/// Empty-state body for any device list (DevicesRail and the Sidebar's
-/// Devices card share this). Three branches:
+/// Empty-state body for the Sidebar's Devices card. Three branches:
 ///
 /// 1. The mDNS reachability ping found *something* on the LAN → soft banner
 ///    plus a "Connect over Wi-Fi" button that drives the resolve mutation.

@@ -25,9 +25,10 @@ in-shell pane + trust modal (§7e/§7f). It landed across PR #15 (§7a–g), #16
 (§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All `ux-*` feature
 branches are merged + deleted.
 
-**`main` is unreleased, ahead of v0.4.1** — next step is a release cut: version
-bump to **0.5.0**, then the §5 tarball. §7a Activity view is the one piece only
-observed populating (no explicit hardware sign-off).
+**v0.5.0 is released** (2026-05-30, tag `2a51f40`, asset
+`ReSide-0.5.0-linux-x86_64.tar.gz`) — it ships the full §7 UX line over v0.4.1.
+§7a Activity view is the one piece only observed populating (no explicit hardware
+sign-off).
 
 ---
 
@@ -57,6 +58,45 @@ for their account and diff it against what `parse_cert_list` keeps.
 (or at least explain them in the cap message), and harden `parse_cert_list`
 against format variation instead of dropping rows; emit a "couldn't parse N lines"
 signal so a drop is visible, not silent.
+
+**Progress 2026-05-30 — parse-hardening landed AND root-cause diagnosed on
+hardware:**
+
+*Parse-hardening (code, committed-pending):* `signer.rs::parse_cert_list` no
+longer silently drops rows. It returns `ParsedCertList { certs, unparsed }`: a
+line is a cert row only if it carries BOTH the "serial number" **and** "machine
+named" anchors (the old single-"serial number" filter let prose noise through and
+leaned on the field-count mismatch to reject it), and a both-anchors row that
+won't resolve to the three back-tick fields is retained as `unparsed` instead of
+discarded. `list_certs` logs a `tracing::warn!` ("cert list: N line(s) looked like
+a certificate but did not parse…") when that set is non-empty. Unit test
+`parse_cert_list_records_unparsable_rows_instead_of_dropping` covers it.
+
+*Hardware diagnostic (phone connected, dev build + temporary raw-stdout dump,
+since reverted):* the fork's raw `cert list` for the user's account reports
+**`You have 1 certificates registered.`** with exactly one cert
+(`iOS Development: Eric Marshall`, serial `17FF…D756`, machine `Sideloader`) — and
+it **parses cleanly** (no `unparsed` warning fired). So the "Settings shows 1 cert"
+display is **correct**; it was never a parser under-count. That **rules out theory
+(b)** (a dropped/omitted issued cert) and points squarely at the **pending
+certificate request** (theory (a)): Apple's cap counts "a current cert **or** a
+pending request," and a pending request never appears in `cert list`, so the UI
+legitimately can't list it. Revoke-→-reinstall worked because it freed the one
+issued slot.
+
+*Cap message (done):* `error.rs`'s `AppleCertLimitReached` copy now reads —
+"Apple caps a free account at ~2 signing certificates, and counts any pending
+request — which won't show in the list, so this can trigger even when Settings
+shows just one. Revoke the certificate in Settings → Certificates to free a slot,
+then try again." (The old copy said "revoke an old one," which read as nonsense
+when the list shows exactly one.)
+
+**§8 is functionally complete:** no issued cert can be silently dropped (hardened +
+hardware-verified the real line parses), and the cap failure now explains *why* it
+can fire with one cert shown. Residual is opportunistic only — confirm the new cap
+copy on a real cap hit if one occurs naturally (couldn't be force-triggered in §1
+testing either). The parse-hardening stays as defensive insurance; plumbing the
+unparsed-count to the UI is deferred unless the log signal ever proves insufficient.
 
 **Done when:** when signing fails at the cap, Settings shows enough to explain
 *why* (issued + pending), and no issued cert is ever silently missing. Validate on

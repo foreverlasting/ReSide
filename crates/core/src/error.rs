@@ -247,7 +247,7 @@ impl AppError {
                 "You've created 10 App IDs this week. Reuse an existing bundle ID, or wait."
             }
             AppleCertLimitReached => {
-                "Apple allows only ~2 signing certificates per free account. Revoke an old one in Settings → Certificates, then try again."
+                "Apple caps a free account at ~2 signing certificates, and counts any pending request — which won't show in the list, so this can trigger even when Settings shows just one. Revoke the certificate in Settings → Certificates to free a slot, then try again."
             }
             SigningCertExpired => "Your signing certificate has expired — sign in again to renew.",
             EntitlementsUnsupported => "Some features may not work after signing.",

@@ -19,16 +19,24 @@ fork (`foreverlasting/Sideloader`, branch `reside-automation`), and the
 **v0.4.1 release** (`ReSide-0.4.1-linux-x86_64.tar.gz`, sha256
 `6312a2dfa81029b0f220235f7f984efc798e58e2bf54a6231875e1934f70bf57`).
 
-**In flight:** PR #16 (`ux-modals-wifi-gate`) is open — ships §7i + §7j.
+**Merged:** PR #16 (`ux-modals-wifi-gate` → main) — §7i + §7j. PR #17
+(`ux-persistent-sidebar` → the `ux-modals-wifi-gate` integration branch) — §7h.
+**Main does not yet carry §7h:** it lives on `ux-modals-wifi-gate` (`ad8f3a6`),
+waiting on that branch's next merge up. Both upstream merges were squashes, so
+local feature branches no longer share clean ancestry — stack new work on the
+integration branch, not on the orphaned per-feature branches.
+
+**In flight:** §7e + §7f (`ux-devices-pane`, stacked on `ux-modals-wifi-gate`) —
+Devices becomes an in-shell pane; build green, not yet hardware-verified.
 
 **Pending hardware verification** (built + green, not yet confirmed on the user's
-device): §7a Activity view, §7i Wi-Fi-connect gate, §7j dark-mode modals.
+device): §7a Activity view, §7h persistent sidebar, §7e/§7f Devices pane.
 
 ---
 
 # Remaining work
 
-## §7h. Persistent sidebar / consistent chrome — IMPLEMENTED 2026-05-29 (frontend build green; not yet hardware-verified)
+## §7h. Persistent sidebar / consistent chrome — MERGED 2026-05-30 (PR #17 → `ux-modals-wifi-gate`; not yet on main; not yet hardware-verified)
 
 **Why:** hardware feedback 2026-05-29 (user flagged directly during §7b verify).
 The Dashboard sidebar (nav + device card + agent card) vanishes when you open
@@ -145,31 +153,46 @@ signal so a drop is visible, not silent.
 *why* (issued + pending), and no issued cert is ever silently missing. Validate on
 the user's account.
 
-## §7f. Pairing auto-chain + Wi-Fi vocabulary  (polish)
+## §7f. Devices surface + Wi-Fi vocabulary — DONE 2026-05-30 (`ux-devices-pane`; build green, not hardware-verified; auto-chain deferred)
 
-**Why:** Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi is four manual
-clicks. Hardware feedback 2026-05-29: the user asked whether the "Establish
-tunnel" / "Check Wi-Fi" buttons do anything and whether the Devices screen is even
-needed. They DO call live backend commands — the manual chain is the clunk.
+**Why:** Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi was four manual
+clicks across a full-screen overlay; hardware feedback 2026-05-29 questioned whether
+the buttons did anything and whether the Devices screen was even needed. They DO call
+live backend commands — the manual chain was the clunk.
 
-**Scope:** auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode
-is on. Collapse the three overlapping Wi-Fi entry points (passive rail poll,
-"Connect over Wi-Fi" resolve, Pairing "Check Wi-Fi" reachability) into one user
-concept. Fold the "is this screen even necessary" question in with §7e.
+**What shipped:** "Devices" is now a first-class in-shell pane (`screens/Devices.tsx`)
+rendered through the persistent shell's `mainContent` (like System/Activity/Settings),
+not a takeover — answering "is this screen needed?" with a real device *manager*.
+Single-device-first: a switcher row appears only when >1 device. A **connection ladder**
+(Paired → Developer Mode → Secure tunnel → Wi-Fi refresh) replaces the scattered
+panels, with downstream rungs `locked` behind the current blocker so exactly one
+action is live; warn/error/remediation copy is ported from the old
+`DevModeGate`/`TunnelPanel`/`WifiPanel`. The three Wi-Fi entry points now read as one
+concept: the ladder's Wi-Fi rung for a connected device, the sidebar `WifiEmptyState`
++ cold-start nudge for an unpaired one. `selectedUdid` now drives `target`, so the
+per-device queries re-scope — the multi-device selection §7h deferred has a home.
+Developer Mode is gated on the *standing* paired state, not the transient pair phase.
+No "Forget device" control (there's no backend unpair — §7b dead-control rule).
+Design artboards in `docs/artboards/devices-pane*.html`.
 
-**Done when:** a successful pair auto-chains to a Wi-Fi-ready state with no manual
-button-mashing; there's one coherent Wi-Fi concept, not three. Validate on hardware.
+**Deferred (still open):** true **auto-chain** — auto-running the tunnel + Wi-Fi check
+after a successful pair when Dev Mode is on. The ladder makes the manual chain legible
+(one live action at a time) but still requires the clicks. Multi-device readiness also
+still rides the install-coupled `pairing_status` (§7i) — exact for one device,
+approximate for several; a per-device paired signal is the real fix.
 
-## §7e. De-duplicate onboarding  (medium)
+## §7e. De-duplicate onboarding — DONE 2026-05-30 (`ux-devices-pane`; build green, not hardware-verified)
 
-**Why:** the Pairing overlay re-presents a "Setup · step 2 of 3" wizard rail that
-duplicates the Dashboard `GetStartedPanel` and is misleading (it's an on-demand
-overlay, not step 2 of a linear flow). Its two footer CTAs ("Skip — USB only" /
-"Enable Wi-Fi refresh") both just close the overlay.
+**Why:** the Pairing overlay re-presented a "Setup · step 2 of 3" wizard rail that
+duplicated the Dashboard `GetStartedPanel` and was misleading (an on-demand overlay,
+not step 2 of a linear flow); its two footer CTAs ("Skip — USB only" / "Enable Wi-Fi
+refresh") both just closed it.
 
-**Scope:** collapse to one honest action and drop the duplicate step rail.
-
-**Done when:** the Pairing overlay has a single honest CTA and no fake wizard rail.
+**What shipped:** pairing is no longer a full-screen overlay at all. The transient
+trust handshake became a focused modal (`screens/PairModal.tsx`, the ImportModal
+pattern) with a single honest action — no fake wizard rail, no dual closing CTAs.
+Everything *after* the handshake (Dev Mode / tunnel / Wi-Fi) moved to the §7f Devices
+pane's ladder. The gallery-only artboard (`screens/Pairing.tsx`) is untouched.
 
 ## §4. AUR packaging
 

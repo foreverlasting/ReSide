@@ -55,8 +55,16 @@ say "  sideloader: $SIDELOADER_SRC"
 say "  netmuxd:    $NETMUXD_SRC"
 
 # --- build the app binary (frontend + Rust, no Tauri bundle) ----------------
+# Two pnpm-11 escape hatches needed on this toolchain (esbuild ships a prebuilt
+# native binary, so its postinstall is unnecessary — but pnpm 11 hard-errors on it):
+#   --config.strictDepBuilds=false   `pnpm install` else exits 1 (ERR_PNPM_IGNORED_BUILDS).
+#   --config.verifyDepsBeforeRun=false  `pnpm tauri build` else aborts on the same
+#       pre-run check; pnpm-workspace.yaml pins it for plain `pnpm build` but the
+#       setting isn't honored through `pnpm tauri build`'s spawned process.
 say "Building frontend + release binary (tauri build --no-bundle)…"
-( cd crates/tauri-app && pnpm install --frozen-lockfile && pnpm tauri build --no-bundle )
+( cd crates/tauri-app \
+    && pnpm install --frozen-lockfile --config.strictDepBuilds=false \
+    && pnpm --config.verifyDepsBeforeRun=false tauri build --no-bundle )
 [ -f "$RESIDE_BIN" ] || die "expected binary not produced at $RESIDE_BIN"
 
 # --- stage ------------------------------------------------------------------

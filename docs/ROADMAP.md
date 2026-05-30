@@ -29,14 +29,18 @@ integration branch, not on the orphaned per-feature branches.
 **In flight:** §7e + §7f (`ux-devices-pane`, stacked on `ux-modals-wifi-gate`) —
 Devices becomes an in-shell pane; build green, not yet hardware-verified.
 
+**Hardware-verified 2026-05-30:** §7e + §7f (Devices pane). §7h (persistent
+sidebar) is verified by extension — the Devices pane runs *inside* the persistent
+shell, so navigating it on hardware exercises §7h.
+
 **Pending hardware verification** (built + green, not yet confirmed on the user's
-device): §7a Activity view, §7h persistent sidebar, §7e/§7f Devices pane.
+device): §7a Activity view.
 
 ---
 
 # Remaining work
 
-## §7h. Persistent sidebar / consistent chrome — MERGED 2026-05-30 (PR #17 → `ux-modals-wifi-gate`; not yet on main; not yet hardware-verified)
+## §7h. Persistent sidebar / consistent chrome — MERGED 2026-05-30 (PR #17 → `ux-modals-wifi-gate`; not yet on main; hardware-verified via §7e/§7f)
 
 **Why:** hardware feedback 2026-05-29 (user flagged directly during §7b verify).
 The Dashboard sidebar (nav + device card + agent card) vanishes when you open
@@ -153,7 +157,7 @@ signal so a drop is visible, not silent.
 *why* (issued + pending), and no issued cert is ever silently missing. Validate on
 the user's account.
 
-## §7f. Devices surface + Wi-Fi vocabulary — DONE 2026-05-30 (`ux-devices-pane`; build green, not hardware-verified; auto-chain deferred)
+## §7f. Devices surface + Wi-Fi vocabulary — DONE + HARDWARE-VERIFIED 2026-05-30 (`ux-devices-pane`, PR #18; auto-chain deferred)
 
 **Why:** Pair → re-check Dev Mode → Establish tunnel → Check Wi-Fi was four manual
 clicks across a full-screen overlay; hardware feedback 2026-05-29 questioned whether
@@ -181,7 +185,7 @@ after a successful pair when Dev Mode is on. The ladder makes the manual chain l
 still rides the install-coupled `pairing_status` (§7i) — exact for one device,
 approximate for several; a per-device paired signal is the real fix.
 
-## §7e. De-duplicate onboarding — DONE 2026-05-30 (`ux-devices-pane`; build green, not hardware-verified)
+## §7e. De-duplicate onboarding — DONE + HARDWARE-VERIFIED 2026-05-30 (`ux-devices-pane`, PR #18)
 
 **Why:** the Pairing overlay re-presented a "Setup · step 2 of 3" wizard rail that
 duplicated the Dashboard `GetStartedPanel` and was misleading (an on-demand overlay,

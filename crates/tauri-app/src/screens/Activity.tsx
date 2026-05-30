@@ -6,102 +6,60 @@
 // Data is already real: `get_activity_log` (Tauri) reads the `activity_log`
 // table that `installs` and the refresh scheduler write to (severities
 // info/warn/error, operations install/refresh). This screen just surfaces it.
-// Theming note: it renders inside `GnomeWindow`, which sets `data-theme`, so we
-// use plain `dark:` utilities and never a second `data-theme`.
+//
+// It is a *pane*: ReSideApp renders it inside the persistent Dashboard shell's
+// `<main>` (ROADMAP §7h), so no window chrome, sidebar, or "Done" button — the
+// sidebar nav is how you leave. The shell's `data-theme` is above it, so plain
+// `dark:` utilities work; never add a second `data-theme`.
 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { GnomeWindow } from "../components/chrome";
-import { ReSideMark } from "../components/logo";
 import { Button, Badge, Icon, cn } from "../components/ui";
 import { api, type ActivityRow } from "../lib/ipc";
 
-export function Activity({
-  dark = false,
-  onClose,
-  toolbarExtra,
-  railExtra,
-}: {
-  dark?: boolean;
-  onClose?: () => void;
-  toolbarExtra?: ReactNode;
-  railExtra?: ReactNode;
-}) {
+export function Activity() {
   const log = useQuery({ queryKey: ["activity-log"], queryFn: api.getActivityLog });
   const rows = log.data ?? [];
 
   return (
-    <GnomeWindow title="ReSide" subtitle="Activity" dark={dark} toolbar={toolbarExtra}>
-      <div className="flex h-full">
-        {/* Left rail */}
-        <div className="flex w-[260px] shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50/60 px-5 py-6 dark:border-slate-800 dark:bg-slate-950">
-          <div className="mb-4 flex items-center gap-2">
-            <ReSideMark size={28} className="rounded-[7px]" />
-            <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
-          </div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-            Activity
-          </div>
-          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
-            Recent installs and refreshes, including the ones the background agent
-            ran on its own while ReSide was closed.
+    <>
+      <div className="flex items-end justify-between gap-6 px-8 pt-7">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-tight">Activity</h1>
+          <p className="mt-1.5 text-[13.5px] text-slate-500 dark:text-slate-400">
+            {rows.length > 0
+              ? `${rows.length} recent event${rows.length === 1 ? "" : "s"}.`
+              : "Installs and refreshes will appear here as they happen."}
           </p>
-          <div className="mt-auto space-y-3">
-            {railExtra}
-            <div className="rounded-md border border-slate-200 bg-white p-3 text-[11.5px] text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-              The last 200 events are kept. A warning or error here usually means a
-              refresh needs your attention — open the app to retry.
-            </div>
-          </div>
         </div>
-
-        {/* Main */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-end justify-between gap-6 px-8 pt-7">
-            <div>
-              <h1 className="text-[22px] font-semibold tracking-tight">Activity</h1>
-              <p className="mt-1.5 text-[13.5px] text-slate-500 dark:text-slate-400">
-                {rows.length > 0
-                  ? `${rows.length} recent event${rows.length === 1 ? "" : "s"}.`
-                  : "Installs and refreshes will appear here as they happen."}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              iconLeft="refresh"
-              onClick={() => log.refetch()}
-              disabled={log.isFetching}
-            >
-              {log.isFetching ? "Loading…" : "Refresh"}
-            </Button>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-8 py-5">
-            {log.isLoading ? (
-              <Empty>Reading the activity log…</Empty>
-            ) : rows.length === 0 ? (
-              <Empty>
-                Nothing yet. Once you install an app or a refresh runs — by hand or
-                in the background — it shows up here.
-              </Empty>
-            ) : (
-              <ol className="space-y-2">
-                {rows.map((r, i) => (
-                  <ActivityItem key={`${r.ts}-${i}`} row={r} />
-                ))}
-              </ol>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50/60 px-8 py-3.5 dark:border-slate-800 dark:bg-slate-950">
-            <Button size="sm" onClick={onClose}>
-              Done
-            </Button>
-          </div>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconLeft="refresh"
+          onClick={() => log.refetch()}
+          disabled={log.isFetching}
+        >
+          {log.isFetching ? "Loading…" : "Refresh"}
+        </Button>
       </div>
-    </GnomeWindow>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-8 py-5">
+        {log.isLoading ? (
+          <Empty>Reading the activity log…</Empty>
+        ) : rows.length === 0 ? (
+          <Empty>
+            Nothing yet. Once you install an app or a refresh runs — by hand or in
+            the background — it shows up here.
+          </Empty>
+        ) : (
+          <ol className="space-y-2">
+            {rows.map((r, i) => (
+              <ActivityItem key={`${r.ts}-${i}`} row={r} />
+            ))}
+          </ol>
+        )}
+      </div>
+    </>
   );
 }
 

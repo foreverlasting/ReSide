@@ -118,6 +118,7 @@ export const Sidebar = ({
     { id: "apps", label: "Apps", icon: "package" },
     { id: "devices", label: "Devices", icon: "smartphone" },
     { id: "activity", label: "Activity", icon: "activity" },
+    { id: "system", label: "System", icon: "shieldCheck" },
     { id: "settings", label: "Settings", icon: "settings" },
   ];
   return (

@@ -4,14 +4,15 @@
 // development certificates — signing then fails with no way out (see ROADMAP
 // item 1). This screen lists the account's certs and revokes one, and lets the
 // user change or forget their stored Apple ID. It owns its own data (queries +
-// mutations) so the shell only has to mount it. Theming note: this renders
-// inside `GnomeWindow`, which sets `data-theme`, so we use plain `dark:`
-// utilities here and never a second `data-theme`.
+// mutations).
+//
+// It is a *pane*, not a window: ReSideApp renders it inside the persistent
+// Dashboard shell's `<main>` (ROADMAP §7h), so it has no window chrome, sidebar,
+// or "Done" button — the sidebar nav is how you leave. The shell's `data-theme`
+// is above it, so plain `dark:` utilities work; never add a second `data-theme`.
 
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GnomeWindow } from "../components/chrome";
-import { ReSideMark } from "../components/logo";
 import { Button, Input, Badge, Icon, Separator } from "../components/ui";
 import {
   AppleIdFields,
@@ -21,17 +22,7 @@ import {
 } from "../components/credentials";
 import { api, asCommandError } from "../lib/ipc";
 
-export function Settings({
-  dark = false,
-  onClose,
-  toolbarExtra,
-  railExtra,
-}: {
-  dark?: boolean;
-  onClose?: () => void;
-  toolbarExtra?: ReactNode;
-  railExtra?: ReactNode;
-}) {
+export function Settings() {
   const qc = useQueryClient();
 
   const creds = useQuery({ queryKey: ["cred-status"], queryFn: api.credentialStatus });
@@ -80,78 +71,44 @@ export function Settings({
   });
 
   return (
-    <GnomeWindow
-      title="ReSide"
-      subtitle="Settings"
-      dark={dark}
-      toolbar={toolbarExtra}
-    >
-      <div className="flex h-full">
-        {/* Left rail */}
-        <div className="flex w-[260px] shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50/60 px-5 py-6 dark:border-slate-800 dark:bg-slate-950">
-          <div className="mb-4 flex items-center gap-2">
-            <ReSideMark size={28} className="rounded-[7px]" />
-            <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
-          </div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-            Settings
-          </div>
-          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
-            Manage the signing certificates on your Apple account and the Apple ID
-            ReSide signs with.
+    <>
+      <div className="flex items-end justify-between gap-6 px-8 pt-7">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-tight">Settings</h1>
+          <p className="mt-1.5 text-[13.5px] text-slate-500 dark:text-slate-400">
+            Certificates and account. Most people never need this — until Apple's
+            certificate limit blocks a signing.
           </p>
-          <div className="mt-auto space-y-3">
-            {railExtra}
-            <div className="rounded-md border border-slate-200 bg-white p-3 text-[11.5px] text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-              Your Apple ID stays in this machine's keyring. Revoking a certificate
-              only affects apps signed with it — re-sign to fix them.
-            </div>
-          </div>
-        </div>
-
-        {/* Main */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-end justify-between gap-6 px-8 pt-7">
-            <div>
-              <h1 className="text-[22px] font-semibold tracking-tight">Settings</h1>
-              <p className="mt-1.5 text-[13.5px] text-slate-500 dark:text-slate-400">
-                Certificates and account. Most people never need this — until Apple's
-                certificate limit blocks a signing.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0 space-y-6 overflow-y-auto px-8 py-5">
-            <CertificatesSection
-              signedIn={!!signedIn}
-              certs={certs}
-              revoking={revoking}
-              onRevoke={(serial) => revoke.mutate(serial)}
-              onRefresh={() => certs.refetch()}
-              needs2fa={needs2fa}
-              twoFa={twoFa}
-              onTwoFaChange={setTwoFa}
-              onVerify={() => certs.refetch()}
-            />
-            <AppleIdSection
-              creds={creds}
-              forgetting={forget.isPending}
-              onForget={() => forget.mutate()}
-              onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["cred-status"] });
-                certs.refetch();
-              }}
-            />
-          </div>
-
-          <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50/60 px-8 py-3.5 dark:border-slate-800 dark:bg-slate-950">
-            <Button size="sm" onClick={onClose}>
-              Done
-            </Button>
-          </div>
         </div>
       </div>
-    </GnomeWindow>
+
+      <div className="flex-1 min-h-0 space-y-6 overflow-y-auto px-8 py-5">
+        <CertificatesSection
+          signedIn={!!signedIn}
+          certs={certs}
+          revoking={revoking}
+          onRevoke={(serial) => revoke.mutate(serial)}
+          onRefresh={() => certs.refetch()}
+          needs2fa={needs2fa}
+          twoFa={twoFa}
+          onTwoFaChange={setTwoFa}
+          onVerify={() => certs.refetch()}
+        />
+        <AppleIdSection
+          creds={creds}
+          forgetting={forget.isPending}
+          onForget={() => forget.mutate()}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["cred-status"] });
+            certs.refetch();
+          }}
+        />
+        <p className="px-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+          Your Apple ID stays in this machine's keyring. Revoking a certificate only
+          affects apps signed with it — re-sign to fix them.
+        </p>
+      </div>
+    </>
   );
 }
 

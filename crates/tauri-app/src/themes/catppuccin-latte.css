@@ -49,6 +49,13 @@
   color-scheme: light;
 }
 
+/* Native form controls onto the mauve accent, matching the dark theme's purple
+ * (and the custom Checkbox/Switch) so radios stay on-theme in both modes. */
+[data-theme="light"] input[type="radio"],
+[data-theme="light"] input[type="checkbox"] {
+  accent-color: var(--ctp-mauve);
+}
+
 /* ============================================================
  * SURFACES
  * ============================================================ */

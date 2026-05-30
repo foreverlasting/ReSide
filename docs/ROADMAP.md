@@ -215,22 +215,56 @@ gap: once the system check is green there's currently NO way to review system
 status (the inline check only shows during onboarding); a persistent "System"
 entry would restore that. (User flagged this directly during §7b verification.)
 
-### 7i. Don't offer "Connect over Wi-Fi" before pairing — hardware feedback 2026-05-29
-On a fresh/new-user state the Devices rail shows "An iPhone is reachable over
-Wi-Fi" + a Connect button before any device is paired. The reachability ping may
-be accurate, but connecting/refreshing over Wi-Fi needs a pairing record, so the
-action shouldn't be offered until the device is paired. Gate the "Connect over
-Wi-Fi" affordance (and likely the whole Wi-Fi resolve path) behind a successful
-pairing. Pairs with 7f's Wi-Fi-vocabulary cleanup.
+### 7i. Don't offer "Connect over Wi-Fi" before pairing — **DONE 2026-05-29**
+On a fresh/new-user state the Devices rail showed "An iPhone is reachable over
+Wi-Fi" + a Connect button before any device was paired — but connecting/refreshing
+over Wi-Fi rides on the USB-minted pairing record, so the action couldn't work yet.
+Shipped: `WifiEmptyState`/`DevicesRail` now take a `paired` prop; when an iPhone is
+reachable but nothing has been paired, the rail shows an informational nudge
+("Plug it in over USB once to pair — then Wi-Fi refresh works on its own.") with
+NO Connect button. The gate is `hasPairedDevice = hasInstalls || pair.isSuccess`:
+a successful install is the persistent proof of a pairing (`installs.rs` writes the
+device's `pairing_status='paired'` row), and `pair.isSuccess` covers the just-
+-paired-this-session case before any install. NB: a dedicated `has_paired_device`
+backend command was considered and rejected — `pairing_status='paired'` is written
+ONLY on install, so it carries the same bit as `apps.length > 0`, for zero extra
+Rust/IPC surface. Frontend build green; **not yet hardware-verified**. Pairs with
+7f's Wi-Fi-vocabulary cleanup.
 
-### 7j. Modals stay light in dark mode — hardware feedback 2026-05-29
-The install (`ImportModal`) and refresh (`RefreshModal`) dialogs render all-white
-even with dark mode on. Root cause is the documented theming gotcha: they render
+### 7j. Modals stay light in dark mode — **DONE 2026-05-29**
+The install (`ImportModal`) and refresh (`RefreshModal`) dialogs rendered all-white
+even with dark mode on. Root cause was the documented theming gotcha: they render
 as siblings of `Dashboard`, OUTSIDE the `GnomeWindow` `data-theme` wrapper, so
 their `dark:` utilities (which compile to `[data-theme=dark] .dark\:…` descendant
-selectors) never match. Fix: pass `dark` into the modals and wrap each in a
-`data-theme` node (mirror `GnomeWindow`'s `display:contents` wrapper), or hoist a
-single `data-theme` onto ReSideApp's root.
+selectors) never matched. Fix: **hoisted a single `data-theme` onto ReSideApp's
+root div** (the chosen option). It anchors the dark-variant descendant selectors
+for EVERY surface — both modals and any future sibling — at one point; the per-
+window `data-theme` in `GnomeWindow` is now redundant but harmless (same value,
+same selector). **Follow-up (same day):** with the surfaces correctly Dracula
+(verified by pixel-sampling a static harness — card `#282a36`, footer `#21222c`,
+primary button purple), the one element still off-theme was the **native radio
+buttons** in the credential chooser, which kept the browser's default blue accent
+(`#99c8ff`). Added `accent-color: var(--dr-purple)` (dark) / `var(--ctp-mauve)`
+(light) for native `input[type=radio|checkbox]` in both theme sheets, and gave the
+modal close buttons a `dark:hover:text-slate-100` (they previously darkened to
+near-invisible on hover). Radios now render `#bd93f9`. **Follow-up 2 (from a live
+hardware screenshot):** the modal card itself was correct Dracula (`#282a36`), but
+the whole app *behind* it read bluer/colder (`#191d2b`) than the warm modal — a
+temperature clash the user flagged as "colors don't match." Root cause: the modal
+**backdrop scrim** was bare `bg-slate-900/40`, which Dracula never remaps, so it
+dimmed everything with stock cold `#0f172a`. Fixed by adding `dark:bg-slate-950/80`
+to both modals' backdrop (an already-remapped token → `#21222c` at 80% in dark),
+so the dim stays in the Dracula family with no blue cast; the lit modal still pops
+via its lighter `#282a36` surface. Verified by reversing the scrim math on the
+screenshot + re-rendering. **Follow-up 3 (live screenshot):** the "Install app"
+heading and the IPA filename had **no text-color class** — they inherited. Inside
+the dashboard that's fine (GnomeWindow's root sets a base `text-slate-900
+dark:text-slate-100`), but the modals render OUTSIDE GnomeWindow, so their
+uncolored text fell back to the browser default (near-black) instead of the
+Dracula foreground. Fixed by giving each modal card the same base text color
+(`text-slate-900 dark:text-slate-100` → `--dr-text #f8f8f2` in dark), which covers
+the heading, filename, and any other uncolored text at once. Frontend build green;
+**not yet hardware-verified**.
 
 ## 8. Certificate count accuracy — hardware feedback 2026-05-29
 

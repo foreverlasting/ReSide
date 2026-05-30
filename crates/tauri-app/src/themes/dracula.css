@@ -37,6 +37,15 @@
   color-scheme: dark;
 }
 
+/* Native form controls (the remember-tier radios) tint with the browser's
+ * default blue accent, which reads as foreign on the Dracula surfaces — the
+ * custom Checkbox/Switch already use purple. Pull native radios/checkboxes onto
+ * the same Dracula purple so the modals are fully on-theme (ROADMAP §7j). */
+[data-theme="dark"] input[type="radio"],
+[data-theme="dark"] input[type="checkbox"] {
+  accent-color: var(--dr-purple);
+}
+
 /* ============================================================
  * dark: prefixed overrides — use !important
  * ============================================================ */

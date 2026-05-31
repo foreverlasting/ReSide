@@ -123,8 +123,20 @@ a `v*` tag, attaching the artifact. **Caveat:** the D signer's pinned-toolchain
 build is the genuinely hard part to reproduce in CI — may need a prebuilt-helper
 cache or a container image.
 
-**Done when:** pushing a `v*` tag produces the attached tarball via CI. Don't block
-any manual release on this.
+**DONE 2026-05-30 (workflow added; first live tag not yet cut).**
+`.github/workflows/release.yml` triggers on `v*`, builds on `archlinux:latest`,
+re-runs the gates, and runs `build-tarball.sh`, attaching the tarball + `.sha256`
+to the tag's GitHub Release. The hard part (the prebuilt **D** `sideloader`) is
+solved with the **prebuilt-helper cache** option: both helpers live as assets on a
+dedicated `helpers-v1` prerelease that the workflow downloads (`gh release
+download`), so CI never rebuilds the ldc fork. A tag/version mismatch fails the job
+fast; an already-drafted release for the tag gets the assets uploaded onto it.
+RELEASING.md documents the tag-to-ship flow and how to refresh `helpers-v1`. The
+manual path is untouched (the §5 "don't block manual release" constraint).
+**Validation outstanding:** no `v*` tag has run through it yet — the first real
+release cut is the proof. The workflow's helper-fetch presumes the `helpers-v1`
+release exists (bootstrapped 2026-05-30 from the local
+`~/.local/lib/reside/{sideloader,netmuxd}`).
 
 ## §6. Upstream the TLS-verify fix to Dadoum
 

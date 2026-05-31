@@ -25,10 +25,12 @@ in-shell pane + trust modal (§7e/§7f). It landed across PR #15 (§7a–g), #16
 (§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All `ux-*` feature
 branches are merged + deleted.
 
-**v0.5.0 is released** (2026-05-30, tag `2a51f40`, asset
-`ReSide-0.5.0-linux-x86_64.tar.gz`) — it ships the full §7 UX line over v0.4.1.
-§7a Activity view is the one piece only observed populating (no explicit hardware
-sign-off).
+**Latest release: v0.5.1** (2026-05-30, tag `v0.5.1`) — a patch over v0.5.0
+carrying the §8 certificate work (clearer cap message + parser hardening). It was
+the **first release built and published automatically by the §5 CI workflow** from
+a pushed tag; the v0.5.0 release (tag `2a51f40`) shipped the full §7 UX line over
+v0.4.1. §7a Activity view is the one piece only observed populating (no explicit
+hardware sign-off).
 
 ---
 
@@ -123,7 +125,7 @@ a `v*` tag, attaching the artifact. **Caveat:** the D signer's pinned-toolchain
 build is the genuinely hard part to reproduce in CI — may need a prebuilt-helper
 cache or a container image.
 
-**DONE 2026-05-30 (workflow added; first live tag not yet cut).**
+**DONE + live-validated 2026-05-30.**
 `.github/workflows/release.yml` triggers on `v*`, builds on `archlinux:latest`,
 re-runs the gates, and runs `build-tarball.sh`, attaching the tarball + `.sha256`
 to the tag's GitHub Release. The hard part (the prebuilt **D** `sideloader`) is
@@ -133,10 +135,8 @@ download`), so CI never rebuilds the ldc fork. A tag/version mismatch fails the 
 fast; an already-drafted release for the tag gets the assets uploaded onto it.
 RELEASING.md documents the tag-to-ship flow and how to refresh `helpers-v1`. The
 manual path is untouched (the §5 "don't block manual release" constraint).
-**Validation outstanding:** no `v*` tag has run through it yet — the first real
-release cut is the proof. The workflow's helper-fetch presumes the `helpers-v1`
-release exists (bootstrapped 2026-05-30 from the local
-`~/.local/lib/reside/{sideloader,netmuxd}`).
+**Proven live:** the `v0.5.1` tag ran end-to-end (workflow succeeded; tarball +
+`.sha256` published and `sha256sum -c`-verified) with no manual packaging.
 
 ## §6. Upstream the TLS-verify fix to Dadoum
 

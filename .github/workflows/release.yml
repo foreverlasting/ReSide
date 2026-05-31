@@ -1,0 +1,126 @@
+name: Release
+
+# Cut a release by pushing a version tag:  git tag v0.5.1 && git push origin v0.5.1
+#
+# This runs the same gates as CI, assembles the self-contained tarball with
+# packaging/build-tarball.sh, and attaches it (plus a .sha256) to the GitHub
+# Release for the tag. It is additive — the manual packaging/RELEASING.md path
+# still works and nothing here blocks it.
+#
+# The two helper binaries the tarball needs (sideloader, netmuxd) are NOT in this
+# repo and the patched `sideloader` D fork is impractical to rebuild in CI, so
+# they are fetched as prebuilt assets from the `helpers-v1` release. Refresh that
+# release (and bump the tag here) only when a helper actually changes — see
+# packaging/RELEASING.md › "Automated releases".
+
+on:
+  push:
+    tags: ['v*']
+
+# Needed to read the helpers-v1 assets and to create/upload the release.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Bump in lockstep with the `helpers-v1` release tag if you ever re-cut it.
+  HELPERS_RELEASE: helpers-v1
+
+jobs:
+  tarball:
+    name: build + attach tarball
+    runs-on: ubuntu-latest
+    # Build on Arch to match the primary (CachyOS) target's webkit/glibc linkage.
+    container:
+      image: archlinux:latest
+    steps:
+      # Same dep set as ci.yml's Arch job, plus github-cli for the release upload.
+      - name: Install system deps
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel nodejs npm curl \
+            webkit2gtk-4.1 libsoup3 usbmuxd libimobiledevice libnotify \
+            openssl git github-cli
+
+      # Pin pnpm to the version CI is proven green on (10 vs 11 disagree on where
+      # build-script approvals live — see ci.yml). build-tarball.sh passes the
+      # pnpm-11 escape-hatch flags too; they are harmless no-ops on pnpm 10.
+      - name: Setup pnpm (pinned)
+        run: |
+          npm install -g pnpm@10.33.4
+          pnpm --version
+
+      - uses: actions/checkout@v5
+
+      # rustup so the exact channel/components in rust-toolchain.toml are used.
+      - name: Setup Rust (pinned)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --no-modify-path --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" show
+
+      # A mistyped tag must never ship: the asset name and install paths come from
+      # tauri.conf.json's version, so the tag has to match it exactly.
+      - name: Verify tag matches app version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(grep -m1 '"version"' crates/tauri-app/src-tauri/tauri.conf.json \
+                  | sed -E 's/.*"version" *: *"([^"]+)".*/\1/')"
+          echo "tag=v$tag  tauri.conf.json=$ver"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag v$tag does not match tauri.conf.json version $ver — bump the version or fix the tag"
+            exit 1
+          fi
+
+      # Gates — a tag should never ship un-gated code, even if cut off a branch
+      # that bypassed the main CI.
+      - name: Frontend build
+        working-directory: crates/tauri-app
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: core tests
+        run: cargo test -p reside-core
+
+      - name: Fetch prebuilt helpers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/helpers"
+          gh release download "$HELPERS_RELEASE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern sideloader --pattern netmuxd \
+            --dir "$RUNNER_TEMP/helpers"
+          chmod +x "$RUNNER_TEMP/helpers/sideloader" "$RUNNER_TEMP/helpers/netmuxd"
+
+      - name: Build tarball
+        env:
+          RESIDE_SIDELOADER_SRC: ${{ runner.temp }}/helpers/sideloader
+          RESIDE_NETMUXD_SRC: ${{ runner.temp }}/helpers/netmuxd
+        run: packaging/build-tarball.sh
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          tarball="$(ls target/release-tarball/ReSide-*-linux-*.tar.gz)"
+          ( cd "$(dirname "$tarball")" \
+              && sha256sum "$(basename "$tarball")" > "$(basename "$tarball").sha256" )
+          notes="packaging/release-notes-${tag}.md"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Release already drafted/published for this tag — just attach assets.
+            gh release upload "$tag" "$tarball" "$tarball.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          elif [ -f "$notes" ]; then
+            gh release create "$tag" "$tarball" "$tarball.sha256" \
+              --repo "$GITHUB_REPOSITORY" --title "ReSide $tag" --notes-file "$notes"
+          else
+            gh release create "$tag" "$tarball" "$tarball.sha256" \
+              --repo "$GITHUB_REPOSITORY" --title "ReSide $tag" --generate-notes
+          fi

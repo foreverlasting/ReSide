@@ -2,12 +2,53 @@
 
 Checklist for cutting a public GitHub Release of the `automation-layer` branch
 (GPL-3.0). Plan: **GitHub Releases first, AUR later** (AUR sources from the
-release). Nothing here is automated — every outward-facing step is a deliberate,
-manual action.
+release).
 
-> `gh` is not installed on this machine. Each publish step below gives both a
-> `gh` command (if you install it: `sudo pacman -S github-cli`, then
-> `gh auth login`) and a web-UI fallback.
+> `gh` is now installed and authenticated on this machine. Each publish step
+> below still gives a web-UI fallback.
+
+## Automated releases (tag → CI builds + attaches the tarball)
+
+`.github/workflows/release.yml` does the tarball build and asset upload for you:
+
+```sh
+# 1. bump the version in crates/tauri-app/src-tauri/tauri.conf.json (and commit)
+# 2. write packaging/release-notes-v<version>.md (optional; CI auto-generates if absent)
+# 3. tag and push — that's it:
+git tag v<version> && git push origin v<version>
+```
+
+The workflow (on `archlinux:latest`) re-runs the gates, fetches the prebuilt
+helpers from the **`helpers-v1`** release, runs `packaging/build-tarball.sh`, and
+attaches `ReSide-<version>-linux-x86_64.tar.gz` + a `.sha256` to the release for
+the tag. It **fails fast if the tag doesn't match** the `tauri.conf.json` version.
+If you've already drafted a release for that tag (e.g. with hand-written notes),
+it just uploads the assets onto it.
+
+The manual steps below still work and nothing blocks them — use them if CI is down
+or you need an out-of-band build.
+
+### The `helpers-v1` prebuilt-helper release
+
+The tarball needs two binaries that aren't in this repo: `sideloader` (the patched
+**D** fork — impractical to rebuild in CI) and `netmuxd`. They live as assets on a
+dedicated **prerelease** tagged `helpers-v1`, which the workflow downloads. They
+are unchanged across app-only releases, so this rarely needs touching. **When a
+helper actually changes**, refresh the assets in place:
+
+```sh
+gh release upload helpers-v1 \
+  ~/.local/lib/reside/sideloader ~/.local/lib/reside/netmuxd \
+  --repo foreverlasting/ReSide --clobber
+```
+
+If you'd rather cut a fresh `helpers-v2`, also bump `HELPERS_RELEASE` in
+`.github/workflows/release.yml`. GPL/LGPL source-availability is unchanged — the
+binary assets point back at the same published fork + upstream (steps 2–3 below).
+
+---
+
+## Manual release (fallback / pre-CI path)
 
 ## 0. Pre-flight — gates green (from `Sideloading/`)
 

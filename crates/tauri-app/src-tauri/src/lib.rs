@@ -179,13 +179,15 @@ async fn list_devices(
     let mut devices = reside_core::device::list_devices().await?;
 
     let known: std::collections::HashMap<String, DeviceIdentity> =
-        sqlx::query_as::<_, DeviceIdentity>("SELECT udid, name, ios_version, product_type FROM devices")
-            .fetch_all(&state.db)
-            .await
-            .map_err(AppError::from)?
-            .into_iter()
-            .map(|d| (d.udid.clone(), d))
-            .collect();
+        sqlx::query_as::<_, DeviceIdentity>(
+            "SELECT udid, name, ios_version, product_type FROM devices",
+        )
+        .fetch_all(&state.db)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|d| (d.udid.clone(), d))
+        .collect();
 
     for dev in &mut devices {
         if !dev.wifi {

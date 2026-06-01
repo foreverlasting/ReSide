@@ -24,6 +24,7 @@ const MOCK_DEVICE: DeviceInfo = {
   connection: "usb",
   wifi: false,
   supported: true,
+  paired: true,
 };
 
 const COPY: Record<PairPhase, { kicker: string; title: string; sub: string }> = {

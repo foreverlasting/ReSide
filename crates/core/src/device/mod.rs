@@ -41,6 +41,13 @@ pub struct DeviceInfo {
     pub wifi: bool,
     /// True when iOS ≥ 17.4 (or unknown — we don't reject what we can't read).
     pub supported: bool,
+    /// True when this host holds a usbmuxd pair record for the device — the
+    /// canonical, *per-device* "is this device trusted by this computer?" fact
+    /// (ROADMAP §7k). The pairing ladder keys off this so it reflects the
+    /// selected device rather than a global has-any-install bit. Populated by
+    /// [`list_devices`]; `enumerate_devices_at` leaves it `false` for the
+    /// annotation step to fill in.
+    pub paired: bool,
 }
 
 /// Enumerate devices visible to ReSide and read basic info for each.
@@ -73,7 +80,29 @@ pub async fn list_devices() -> Result<Vec<DeviceInfo>> {
             out.push(cached);
         }
     }
+
+    annotate_paired(&mut out).await;
     Ok(out)
+}
+
+/// Fill in each device's [`DeviceInfo::paired`] from the usbmuxd trust store —
+/// the one source of pairing truth shared by ReSide and the signer (see
+/// [`pair_device`]). A device is "paired" iff this host holds a usbmuxd pair
+/// record for its UDID (ROADMAP §7k).
+///
+/// Best-effort. On Linux usbmuxd is udev-activated and EXITS when no cable is
+/// attached, so when it's unavailable we cannot read records at all. In that
+/// state a Wi-Fi card only reached the session cache *after* an earlier USB
+/// pairing (the §7i invariant), so we trust Wi-Fi rows and leave anything we
+/// can't verify unpaired. One connection per device keeps this robust against
+/// usbmuxd closing the socket after a "no record" reply (device counts are tiny).
+async fn annotate_paired(devices: &mut [DeviceInfo]) {
+    for d in devices.iter_mut() {
+        d.paired = match UsbmuxdConnection::default().await {
+            Ok(mut conn) => conn.get_pair_record(&d.udid).await.is_ok(),
+            Err(_) => d.wifi,
+        };
+    }
 }
 
 /// Enumerate devices visible through a specific muxer (the system unix socket
@@ -112,6 +141,9 @@ pub async fn enumerate_devices_at(addr: UsbmuxdAddr) -> Result<Vec<DeviceInfo>> 
             connection,
             wifi,
             supported,
+            // Filled in by `list_devices`'s `annotate_paired` step; the bare
+            // enumeration (also used by the Wi-Fi resolve path) doesn't know yet.
+            paired: false,
         });
     }
     Ok(out)
@@ -369,6 +401,7 @@ mod tests {
             connection: if wifi { "network".into() } else { "usb".into() },
             wifi,
             supported: true,
+            paired: false,
         }
     }
 

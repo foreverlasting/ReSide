@@ -12,8 +12,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::error::Result;
-use crate::transport::remote_xpc::{DiscoveredService, RsdTunnel, TunnelEndpoint};
+use crate::error::{AppError, Result};
+use crate::transport::remote_xpc::{DiscoveredService, RsdTunnel, TunnelEndpoint, TunnelTransport};
 
 /// Tracks live tunnels keyed by device UDID. Cloneable: clones share state.
 #[derive(Clone, Default)]
@@ -27,6 +27,10 @@ pub struct TunnelManager {
 pub struct TunnelStatus {
     pub udid: String,
     pub connected: bool,
+    /// Transport the live tunnel runs over (ROADMAP §7k). Only meaningful when
+    /// `connected`; a disconnected status reports `Usb` as a neutral default and
+    /// the UI ignores transport unless `connected` is true.
+    pub transport: TunnelTransport,
     pub endpoint: Option<TunnelEndpoint>,
     pub services: Vec<DiscoveredService>,
 }
@@ -36,6 +40,7 @@ impl TunnelStatus {
         Self {
             udid: udid.to_string(),
             connected: false,
+            transport: TunnelTransport::Usb,
             endpoint: None,
             services: Vec::new(),
         }
@@ -45,6 +50,7 @@ impl TunnelStatus {
         Self {
             udid: udid.to_string(),
             connected: true,
+            transport: tunnel.transport,
             endpoint: Some(tunnel.endpoint.clone()),
             services: tunnel.services.clone(),
         }
@@ -54,6 +60,22 @@ impl TunnelStatus {
 impl TunnelManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Establish (or replace) the tunnel for a device on the requested transport
+    /// and return its status (ROADMAP §7k). Replacing drops the prior tunnel,
+    /// which closes it.
+    ///
+    /// Wi-Fi RSD tunnels (idevice `remote_pairing`) are a later slice — see
+    /// `remote_xpc`'s module note — so a Wi-Fi request fails cleanly rather than
+    /// silently establishing over the cable. The ladder surfaces this as a
+    /// "connect via USB" prompt instead of a phantom Wi-Fi tunnel.
+    pub async fn connect(&self, udid: &str, wifi: bool) -> Result<TunnelStatus> {
+        if wifi {
+            tracing::info!(udid, "Wi-Fi tunnel requested; not yet supported (USB only)");
+            return Err(AppError::WifiTunnelUnsupported);
+        }
+        self.connect_usb(udid).await
     }
 
     /// Establish (or replace) the USB tunnel for a device and return its status.

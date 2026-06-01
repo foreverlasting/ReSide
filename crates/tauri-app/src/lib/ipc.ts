@@ -58,6 +58,10 @@ export interface DiscoveredService {
 export interface TunnelStatus {
   udid: string;
   connected: boolean;
+  /** Transport the live tunnel runs over (ROADMAP §7k). Only meaningful when
+   *  `connected`; the ladder re-establishes when it stops matching the device's
+   *  current reach. A disconnected status reports `"usb"` as a neutral default. */
+  transport: "usb" | "wifi";
   endpoint: TunnelEndpoint | null;
   services: DiscoveredService[];
 }
@@ -92,6 +96,10 @@ export interface DeviceInfo {
   connection: string;
   wifi: boolean;
   supported: boolean;
+  /** Whether this host holds a usbmuxd pair record for the device — the
+   *  per-device "is this device trusted by this computer?" fact (ROADMAP §7k).
+   *  Persists across launches; doesn't require an install. */
+  paired: boolean;
 }
 
 /** Returned by `install_ipa` on success. */
@@ -109,6 +117,9 @@ export interface InstalledApp {
   bundleId: string;
   version: string | null;
   deviceUdid: string;
+  /** Human name of the device this app is on (persisted `devices.name`), so the
+   *  Apps grid groups by device even when that device isn't connected. */
+  deviceName: string;
   installTs: number;
   expirationTs: number;
   refreshStatus: string;
@@ -192,6 +203,13 @@ export const api = {
   runSetupCheck: () => invoke<SetupReport>("run_setup_check"),
   getTunnelStatus: () => invoke<TunnelPill>("get_tunnel_status"),
   establishTunnel: (udid: string) => invoke<TunnelStatus>("establish_tunnel", { udid }),
+  /** Establish the tunnel on a specific transport — the ladder passes the
+   *  device's current reach so a transport switch re-establishes (ROADMAP §7k). */
+  establishTunnelForTransport: (udid: string, wifi: boolean) =>
+    invoke<TunnelStatus>("establish_tunnel_for_transport", { udid, wifi }),
+  /** Per-device live tunnel status (connected + transport), distinct from the
+   *  aggregate titlebar pill (`getTunnelStatus`). ROADMAP §7k. */
+  tunnelStatusFor: (udid: string) => invoke<TunnelStatus>("tunnel_status_for", { udid }),
   listDevices: () => invoke<DeviceInfo[]>("list_devices"),
   pairDevice: (udid: string) => invoke<void>("pair_device", { udid }),
   developerModeStatus: (udid: string) => invoke<boolean>("developer_mode_status", { udid }),

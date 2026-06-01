@@ -53,6 +53,7 @@ mod tests {
             connection: "network".into(),
             wifi: true,
             supported: true,
+            paired: false,
         }
     }
 

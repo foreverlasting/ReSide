@@ -40,6 +40,7 @@ pub enum ErrorCategory {
     BundleIdConflict,
     InstallTransferFailed,
     InstallVerifyFailed,
+    WifiTunnelUnsupported,
     /// Catch-all for bugs and infrastructure failures (I/O, DB, serialization).
     /// Not part of the user-facing taxonomy; should stay rare.
     Internal,
@@ -76,6 +77,7 @@ impl ErrorCategory {
             Self::BundleIdConflict => "BundleIdConflict",
             Self::InstallTransferFailed => "InstallTransferFailed",
             Self::InstallVerifyFailed => "InstallVerifyFailed",
+            Self::WifiTunnelUnsupported => "WifiTunnelUnsupported",
             Self::Internal => "Internal",
         }
     }
@@ -155,6 +157,8 @@ pub enum AppError {
     InstallTransferFailed,
     #[error("install completed but verification failed")]
     InstallVerifyFailed,
+    #[error("Wi-Fi RSD tunnels are not supported yet")]
+    WifiTunnelUnsupported,
 
     // ---- Internal / infrastructure (category: Internal) ----
     #[error("i/o error")]
@@ -201,6 +205,7 @@ impl AppError {
             BundleIdConflict => ErrorCategory::BundleIdConflict,
             InstallTransferFailed => ErrorCategory::InstallTransferFailed,
             InstallVerifyFailed => ErrorCategory::InstallVerifyFailed,
+            WifiTunnelUnsupported => ErrorCategory::WifiTunnelUnsupported,
             Io(_) | Db(_) | Migrate(_) | Serialization(_) | Internal(_) => ErrorCategory::Internal,
         }
     }
@@ -254,6 +259,9 @@ impl AppError {
             BundleIdConflict => "Reuse an existing bundle ID or generate a new one.",
             InstallTransferFailed => "Transfer to device failed — check USB cable or Wi-Fi.",
             InstallVerifyFailed => "Install completed but verification failed.",
+            WifiTunnelUnsupported => {
+                "Connecting over Wi-Fi isn't supported yet — connect the device via USB to establish the tunnel."
+            }
             Io(_) | Db(_) | Migrate(_) | Serialization(_) | Internal(_) => {
                 "Something went wrong inside ReSide — see logs or export a debug bundle."
             }

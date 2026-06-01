@@ -22,8 +22,10 @@ fork (`foreverlasting/Sideloader`, branch `reside-automation`), and the
 **The entire §7 UX line is now on `main` and hardware-verified** — persistent
 sidebar (§7h), System view (§7d gap closed), Activity view (§7a), and the Devices
 in-shell pane + trust modal (§7e/§7f). It landed across PR #15 (§7a–g), #16
-(§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All `ux-*` feature
-branches are merged + deleted.
+(§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All merged `ux-*` feature
+branches are deleted. **In flight (2026-05-31):** §7k (pairing auto-chain +
+per-device paired signal) is implemented on branch `ux-pairing-autochain` — four
+gates green, not yet on main, pending hardware verify. See the §7k Completed entry.
 
 **Latest release: v0.5.1** (2026-05-30, tag `v0.5.1`) — a patch over v0.5.0
 carrying the §8 certificate work (clearer cap message + parser hardening). It was
@@ -147,21 +149,6 @@ non-interactive login) and is good open-source citizenship.
 
 **Done when:** the PR is open upstream.
 
-## §7k. Pairing auto-chain + per-device paired signal — polish (deferred from §7f)
-
-**Why:** the §7f connection ladder makes the manual chain legible (one live action
-at a time) but a successful pair still needs manual clicks through Dev Mode →
-tunnel → Wi-Fi. And multi-device readiness rides the install-coupled
-`pairing_status` (§7i) — exact for one device, approximate for several.
-
-**Scope:** auto-run the tunnel + Wi-Fi check after a successful pair when Dev Mode
-is on (the ladder's later rungs advance on their own). Add a per-device paired
-signal so the ladder reflects the *selected* device, not the global `hasInstalls`
-bit.
-
-**Done when:** a successful pair auto-advances the ladder to a Wi-Fi-ready state
-with no extra clicks, and the ladder's readiness is per-device. Validate on hardware.
-
 ---
 
 # Completed
@@ -244,6 +231,79 @@ Condensed; load-bearing gotchas retained.
   so per-device queries re-scope. Developer Mode gated on the STANDING paired state, not
   the transient pair phase. No "Forget" control (no backend unpair — §7b rule). Artboards
   in `docs/artboards/devices-pane*.html`. **Deferred → §7k.**
+- **§7k. Pairing auto-chain + per-device paired signal** — DONE 2026-05-31 (branch
+  `ux-pairing-autochain`, pending hardware verify). Three parts:
+  (1) **Per-device paired signal** — `DeviceInfo.paired` reads straight from the
+  usbmuxd trust store (`annotate_paired` → `get_pair_record` per UDID); the ladder's
+  `selectedPaired` keys off the *selected* device (OR'd with this session's
+  `pair.isSuccess` for the just-paired UDID), replacing the global `hasInstalls` bit.
+  The old global `hasEverPaired` survives only for the no-device surfaces (cold-start
+  Wi-Fi nudge, §7i). (2) **Transport-aware tunnel** — `TunnelStatus` gained a
+  `transport` field; new `tunnel_status_for(udid)` (per-device, distinct from the
+  aggregate titlebar pill) and `establish_tunnel_for_transport(udid, wifi)` commands;
+  a USB tunnel left behind after the device moves to Wi-Fi reads as stale (transport
+  mismatch) so the ladder re-prompts. (3) **Auto-chain** — after a successful pair,
+  once Developer Mode reads on, a `useRef`-guarded effect walks the tunnel + Wi-Fi
+  rungs once each (no auto-retry; manual Retry stays the recovery path), scoped to
+  the just-paired & selected UDID, never on cold launch.
+  **Scoped cut:** Wi-Fi RSD tunnel *establishment* (idevice `remote_pairing`) stays
+  the deferred "later slice" `remote_xpc` already calls out — `connect(udid, wifi=true)`
+  fails fast with the new `WifiTunnelUnsupported` error ("connect via USB") rather than
+  faking a tunnel. A fresh pair is always USB, so the auto-chain exercises the live USB
+  path; the Wi-Fi establish path is wired end-to-end but intentionally errors until that
+  slice lands.
+  **Hardware verify — multi-device (iPad + iPhone):** pair one, let its ladder
+  auto-advance, then pair the other; confirm each device's ladder tracks
+  *independently* when you switch in the device switcher (Paired / Dev Mode / tunnel
+  per-UDID), and that **both tunnels stay live at once** (switching to the iPad shows
+  its tunnel still up while the iPhone's is too — `TunnelManager` is a per-UDID
+  HashMap). Known-correct-by-design, but unverified on hardware: (a) the **auto-chain
+  runs for one device at a time** — the most-recently-paired *and* selected UDID, since
+  it rides the single `pair` handle; pairing B before A's chain finishes abandons A's
+  auto-walk (A still shows correct *status*; its last rung is a manual click). This
+  matches the inherently sequential pair flow (one Trust tap each). (b) the **Wi-Fi
+  reachability rung is still network-wide** (`checkWifiAvailability`, not device-scoped
+  — pre-existing §7f/§7i limitation), so that one rung reads identically on both
+  ladders.
+  **Apps-grid device attribution (found on hardware 2026-05-31):** with the same app
+  on two devices the grid showed two cards with no owner, and the header
+  mis-attributed the global install count to the *selected* device ("2 apps on Eric's
+  iPad" when one was on the iPhone). Fix: `list_apps` now joins `devices.name` (rides
+  on each `InstalledApp` as `deviceName`, so it groups even when the device is
+  offline); `LiveApps` groups cards under a per-device subheader; the header counts
+  *distinct* devices ("N apps across M devices", or "N apps on <name>" for one).
+  **Wi-Fi device identity mislabel (found on hardware 2026-05-31):** an iPhone +
+  iPad over Wi-Fi *both* rendered as the iPad (same name/model/iOS) — the per-device
+  lockdown read over netmuxd returns the wrong device's identity. The DB has each
+  paired device's true identity (captured over USB at install), so the `list_devices`
+  command now overrides name/ios_version/product_type from the `devices` table for
+  **Wi-Fi rows** (USB rows keep their reliable live read). Added a `product_type`
+  column (migration `0002`) persisted on install/refresh; existing rows have it null
+  until their next USB install, so model shows "—" meanwhile (better than confidently
+  wrong). Root cause (netmuxd lockdown misrouting) is upstream and only bites the
+  deferred Wi-Fi-tunnel ops; this fixes the *display*. Auto-refresh enable in dev also
+  needed `cargo build -p reside-agent` (binary absent in `tauri dev`) — env gap, not a
+  code bug, and unrelated to device count.
+  **Ladder remodel — the "Secure tunnel" rung was a false gate (found on hardware
+  2026-05-31, SUPERSEDES parts (2)+(3) above):** hardware-verified that **Wi-Fi
+  refresh works end-to-end** (an iPad refresh over Wi-Fi bumped its expiry + logged
+  clean). Tracing showed install/refresh route through the **external signer over
+  netmuxd** (`route_to` → `USBMUXD_SOCKET_ADDRESS`; the signer does its own iOS-17.4
+  tunneling) and **never** touch ReSide's in-process RSD tunnel (`TunnelManager` has
+  zero non-UI callers). So the ladder's "Secure tunnel" rung gated nothing real and,
+  because it can't go green over Wi-Fi, *wedged the whole Wi-Fi ladder* (also: the
+  Developer-Mode read was USB-only). **Remodel:** ladder is now **Paired → Developer
+  Mode → Ready to refresh** (3 rungs; tunnel + Wi-Fi-scan rungs dropped). Developer
+  Mode over Wi-Fi reads a value cached from USB reads / installs (migration `0003`
+  adds `developer_mode_checked_ts`, backfilled from existing installs since an install
+  proves Dev Mode was on; `developer_mode_status` command falls back to the cache when
+  the fast USB read fails). The §7k auto-chain + per-device tunnel UI wiring were
+  removed; the per-device **paired signal** (part 1) and the in-process RSD tunnel
+  **infra** (`TunnelManager`, `establish_tunnel*`, titlebar pill) stay (dormant, kept
+  for future in-process RemoteXPC work — user's call). *Loose end:* the titlebar
+  "Tunnel" pill now reads permanently "No tunnel" (nothing establishes one) — hide or
+  repurpose later. Also fixed this pass: sidebar lists **all** located devices
+  (selectable), and the Model field is hidden when unknown rather than showing "—".
 
 ## Standing constraints
 

@@ -96,6 +96,9 @@ export const Sidebar = ({
   active = "apps",
   deviceConnected = true,
   device,
+  devices,
+  selectedUdid,
+  onSelectDevice,
   agentActive = true,
   agentDetail,
   onNavigate,
@@ -104,6 +107,11 @@ export const Sidebar = ({
   active?: string;
   deviceConnected?: boolean;
   device?: DeviceInfo | null;
+  /** All located devices (live mode). Each renders as a selectable card so the
+   *  rail reflects every paired/reachable device, not just the active one. */
+  devices?: DeviceInfo[];
+  selectedUdid?: string | null;
+  onSelectDevice?: (udid: string) => void;
   agentActive?: boolean;
   agentDetail?: string;
   onNavigate?: (id: string) => void;
@@ -114,6 +122,9 @@ export const Sidebar = ({
 }) => {
   // `device === undefined` means gallery mode; otherwise we're live.
   const live = device !== undefined;
+  // Prefer the full list; fall back to the single `device` for callers that
+  // haven't been migrated (and gallery mode, which passes neither).
+  const sidebarDevices = devices ?? (device ? [device] : []);
   const items: Array<{ id: string; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
     { id: "apps", label: "Apps", icon: "package" },
     { id: "devices", label: "Devices", icon: "smartphone" },
@@ -171,26 +182,46 @@ export const Sidebar = ({
           </button>
         </div>
         {live ? (
-          device ? (
-            <div className="rounded-md border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex items-center gap-2">
-                <Icon name="smartphone" size={14} className="text-slate-500" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px] font-medium">
-                    {device.name ?? `${device.udid.slice(0, 8)}…`}
-                  </div>
-                  <div className="truncate text-[10.5px] text-slate-500">
-                    {device.productType ?? "iOS device"}
-                    {device.iosVersion ? ` · iOS ${device.iosVersion}` : ""}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <StatusDot tone={device.supported ? "success" : "danger"} />
-                <span className="text-[10.5px] text-slate-500">
-                  {device.wifi ? "Wi-Fi" : device.connection.toUpperCase()}
-                </span>
-              </div>
+          sidebarDevices.length > 0 ? (
+            <div className="space-y-1.5">
+              {sidebarDevices.map((d) => {
+                // Model is hidden when unknown rather than shown as a placeholder:
+                // it's only persisted from a USB install, and a Wi-Fi read can't
+                // be trusted for it (see list_devices override). iOS version still
+                // shows. Selecting a card scopes the panes, same as the switcher.
+                const meta = [d.productType, d.iosVersion ? `iOS ${d.iosVersion}` : null]
+                  .filter(Boolean)
+                  .join(" · ");
+                const selected = d.udid === selectedUdid;
+                return (
+                  <button
+                    key={d.udid}
+                    onClick={() => onSelectDevice?.(d.udid)}
+                    className={cn(
+                      "w-full rounded-md border p-2.5 text-left",
+                      selected
+                        ? "border-violet-300 bg-violet-50/60 dark:border-violet-700/60 dark:bg-violet-950/30"
+                        : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon name="smartphone" size={14} className="text-slate-500" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[12.5px] font-medium">
+                          {d.name ?? `${d.udid.slice(0, 8)}…`}
+                        </div>
+                        {meta && <div className="truncate text-[10.5px] text-slate-500">{meta}</div>}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <StatusDot tone={d.supported ? "success" : "danger"} />
+                      <span className="text-[10.5px] text-slate-500">
+                        {d.wifi ? "Wi-Fi" : d.connection.toUpperCase()}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           ) : noDeviceFallback ? (
             <div className="rounded-md border border-dashed border-slate-300 p-2.5 dark:border-slate-700">

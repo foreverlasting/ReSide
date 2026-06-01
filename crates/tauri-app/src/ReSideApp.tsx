@@ -15,12 +15,7 @@ import { ImportModal } from "./screens/ImportModal";
 import { RefreshModal } from "./screens/RefreshModal";
 import { Devices } from "./screens/Devices";
 import { PairModal } from "./screens/PairModal";
-import type {
-  DevModeState,
-  PairPhase,
-  TunnelPhase,
-  WifiPhase,
-} from "./screens/Pairing";
+import type { DevModeState, PairPhase } from "./screens/Pairing";
 import {
   api,
   asCommandError,
@@ -89,11 +84,13 @@ export function ReSideApp() {
   });
   const canEnableAgent = credStatus.data?.mode === "keyring";
 
-  // Has a device ever been paired? Wi-Fi refresh rides on the USB-minted pairing
-  // record, so the "Connect over Wi-Fi" affordance is gated on this (ROADMAP §7i).
-  // A successful install is the persistent proof of a pairing (it writes the
-  // device's `pairing_status='paired'` row); `pair.isSuccess` covers the just-
-  // -paired-this-session case before any install exists.
+  // Has *any* device ever been paired? Used only where there is no selected
+  // device to speak of — the no-device sidebar / cold-start Wi-Fi nudge, which
+  // gates "Connect over Wi-Fi" on a prior USB pairing (ROADMAP §7i). A
+  // successful install is persistent proof of a pairing (it writes the device's
+  // `pairing_status='paired'` row); `pair.isSuccess` covers the just-paired-
+  // this-session case before any install exists. NB: the *per-device* ladder
+  // uses `selectedPaired` below, not this global bit (ROADMAP §7k).
   const hasInstalls = (apps.data?.length ?? 0) > 0;
 
   const deviceList = useMemo(() => devices.data ?? [], [devices.data]);
@@ -110,8 +107,18 @@ export function ReSideApp() {
     onSuccess: () => devices.refetch(),
   });
 
-  // Combine the persistent (install record) and session (just-paired) signals.
-  const hasPairedDevice = hasInstalls || pair.isSuccess;
+  // Global "ever paired" — for the no-device surfaces only (see `hasInstalls`).
+  const hasEverPaired = hasInstalls || pair.isSuccess;
+
+  // Per-device paired signal (ROADMAP §7k): the ladder must reflect the
+  // *selected* device, not whether any device has an install. The backend reads
+  // this straight from the usbmuxd trust store (`DeviceInfo.paired`), so it's
+  // exact and survives restarts. We OR in `pair.isSuccess` for the device the
+  // user just paired (`pair.variables` is the UDID passed to `pair.mutate`) so
+  // the "Paired" rung lights up immediately, before the device list refetch
+  // round-trips the freshly written pair record back.
+  const selectedPaired =
+    (target?.paired ?? false) || (pair.isSuccess && pair.variables === target?.udid);
 
   // "Refresh all due" — the same due-check the background agent runs on a timer.
   const refreshAll = useMutation({
@@ -143,10 +150,10 @@ export function ReSideApp() {
   const devMode = useQuery({
     queryKey: ["dev-mode", target?.udid],
     queryFn: () => api.developerModeStatus(target!.udid),
-    enabled: isTauri() && !!target && hasPairedDevice,
+    enabled: isTauri() && !!target && selectedPaired,
   });
 
-  const developerMode: DevModeState = !hasPairedDevice
+  const developerMode: DevModeState = !selectedPaired
     ? "idle"
     : devMode.isError
       ? "unknown"
@@ -155,27 +162,6 @@ export function ReSideApp() {
         : devMode.data === false
           ? "off"
           : "checking";
-
-  // Once Developer Mode is confirmed on, the device is ready for the RSD tunnel
-  // — the gateway to install + Wi-Fi refresh. Establish it on demand.
-  const tunnelEstablish = useMutation({
-    mutationFn: (udid: string) => api.establishTunnel(udid),
-    onSuccess: () => tunnel.refetch(),
-  });
-
-  const tunnelPhase: TunnelPhase = tunnelEstablish.isPending
-    ? "connecting"
-    : tunnelEstablish.isSuccess
-      ? "connected"
-      : tunnelEstablish.isError
-        ? "error"
-        : "idle";
-
-  // Wi-Fi reachability: an on-demand mDNS scan for RemoteXPC endpoints. Not
-  // device-scoped yet — it answers "is any iOS device reachable on this network?"
-  const wifiCheck = useMutation({
-    mutationFn: () => api.checkWifiAvailability(),
-  });
 
   // A passive Wi-Fi-reachability ping for the Dashboard rail. Runs ONLY when
   // the USB list is empty (so we don't bother the network when a cable is in)
@@ -200,14 +186,6 @@ export function ReSideApp() {
       queryClient.invalidateQueries({ queryKey: ["devices"] });
     },
   });
-
-  const wifiPhase: WifiPhase = wifiCheck.isPending
-    ? "checking"
-    : wifiCheck.isSuccess
-      ? "done"
-      : wifiCheck.isError
-        ? "error"
-        : "idle";
 
   const setupError = setup.error ? asCommandError(setup.error) : null;
   const backendTone = setupError ? "danger" : setup.isLoading ? "warning" : "success";
@@ -308,23 +286,15 @@ export function ReSideApp() {
               devices={deviceList}
               selectedUdid={target?.udid ?? null}
               onSelect={setSelectedUdid}
-              paired={hasPairedDevice}
+              paired={selectedPaired}
               developerMode={developerMode}
-              tunnelPhase={tunnelPhase}
-              tunnelStatus={tunnelEstablish.data}
-              tunnelError={tunnelEstablish.error ? asCommandError(tunnelEstablish.error) : null}
-              wifiPhase={wifiPhase}
-              wifiAvailability={wifiCheck.data}
-              wifiError={wifiCheck.error ? asCommandError(wifiCheck.error) : null}
               onPair={canPair ? openPairModal : undefined}
               onRecheckDevMode={() => devMode.refetch()}
-              onEstablishTunnel={() => target && tunnelEstablish.mutate(target.udid)}
-              onCheckWifi={() => wifiCheck.mutate()}
               wifiReachable={wifiRailCheck.data?.available ?? false}
               wifiChecking={wifiRailCheck.isFetching}
               resolving={resolveWifi.isPending}
               resolveError={resolveWifi.error ? asCommandError(resolveWifi.error) : null}
-              onConnectWifi={hasPairedDevice ? () => resolveWifi.mutate() : undefined}
+              onConnectWifi={hasEverPaired ? () => resolveWifi.mutate() : undefined}
               onRescanWifi={() => wifiRailCheck.refetch()}
             />
           ) : surface === "activity" ? (
@@ -334,6 +304,8 @@ export function ReSideApp() {
           ) : undefined
         }
         device={target ?? null}
+        devices={deviceList}
+        onSelectDevice={setSelectedUdid}
         apps={apps.data ?? []}
         toolbarExtra={toolbarExtra}
         onImport={target ? () => setImporting(true) : undefined}
@@ -342,7 +314,7 @@ export function ReSideApp() {
         refreshingAll={refreshAll.isPending}
         sidebarNoDeviceFallback={
           <WifiEmptyState
-            paired={hasPairedDevice}
+            paired={hasEverPaired}
             wifiReachable={wifiRailCheck.data?.available ?? false}
             wifiChecking={wifiRailCheck.isFetching}
             resolving={resolveWifi.isPending}

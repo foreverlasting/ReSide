@@ -14,6 +14,7 @@
 use crate::device::paired_provider;
 use crate::error::{AppError, Result};
 use idevice::core_device_proxy::CoreDeviceProxy;
+use idevice::provider::IdeviceProvider;
 use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::AdapterHandle;
 use idevice::{IdeviceError, IdeviceService};
@@ -30,6 +31,19 @@ pub struct RsdTunnel {
     pub endpoint: TunnelEndpoint,
     /// Services advertised by the device over RSD (sorted by name).
     pub services: Vec<DiscoveredService>,
+    /// Which muxer transport carried the handshake. The UI ladder (ROADMAP §7k)
+    /// re-establishes when this no longer matches the device's current reach,
+    /// so a USB tunnel left behind after the user moves to Wi-Fi reads as stale.
+    pub transport: TunnelTransport,
+}
+
+/// Which muxer transport an [`RsdTunnel`] runs over. Serialized (lowercase) onto
+/// the per-device tunnel status the ladder reads (ROADMAP §7k).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelTransport {
+    Usb,
+    Wifi,
 }
 
 /// IPv6 tunnel parameters from the CDTunnel handshake.
@@ -59,7 +73,16 @@ impl RsdTunnel {
     /// services reachable through it. Requires a stored pair record.
     pub async fn establish_usb(udid: &str) -> Result<Self> {
         let provider = paired_provider(udid).await?;
+        Self::establish_over(provider, TunnelTransport::Usb).await
+    }
 
+    /// Run the CDTunnel handshake over a prepared (trusted) provider and tag the
+    /// resulting tunnel with the transport it came up on. Shared by every
+    /// transport-specific entry point above.
+    async fn establish_over(
+        provider: impl IdeviceProvider,
+        transport: TunnelTransport,
+    ) -> Result<Self> {
         // Open CoreDeviceProxy over the trusted lockdown session and perform the
         // CDTunnel handshake.
         let proxy = CoreDeviceProxy::connect(&provider)
@@ -101,13 +124,15 @@ impl RsdTunnel {
         tracing::info!(
             rsd_port = endpoint.rsd_port,
             service_count = services.len(),
-            "RSD tunnel established over USB"
+            ?transport,
+            "RSD tunnel established"
         );
 
         Ok(Self {
             handle,
             endpoint,
             services,
+            transport,
         })
     }
 

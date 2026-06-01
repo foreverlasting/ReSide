@@ -54,6 +54,8 @@ export function Dashboard({
   live = false,
   active = "apps",
   device,
+  devices,
+  onSelectDevice,
   apps = [],
   toolbarExtra,
   onNavigate,
@@ -78,6 +80,9 @@ export function Dashboard({
    *  navigates; gallery mode stays on "apps". */
   active?: string;
   device?: DeviceInfo | null;
+  /** All located devices, for the sidebar list (live mode). */
+  devices?: DeviceInfo[];
+  onSelectDevice?: (udid: string) => void;
   apps?: InstalledApp[];
   toolbarExtra?: ReactNode;
   onNavigate?: (id: string) => void;
@@ -114,11 +119,20 @@ export function Dashboard({
 
   const deviceLabel = device?.name ?? (device ? `${device.udid.slice(0, 8)}…` : null);
 
+  // Distinct devices the installed apps span — apps can live on devices that
+  // aren't connected right now, so this is counted from the install records
+  // (each carries its own `deviceName`), not the live device list.
+  const appDeviceCount = new Set(apps.map((a) => a.deviceUdid)).size;
+
   // Live header copy by stage.
   let liveHeadline = "Installed apps";
   let liveSubhead = "Pair a device to get started.";
   if (hasApps) {
-    liveSubhead = `${apps.length} app${apps.length === 1 ? "" : "s"} on ${deviceLabel ?? "your device"}.`;
+    const appCount = `${apps.length} app${apps.length === 1 ? "" : "s"}`;
+    liveSubhead =
+      appDeviceCount > 1
+        ? `${appCount} across ${appDeviceCount} devices.`
+        : `${appCount} on ${apps[0]?.deviceName ?? deviceLabel ?? "your device"}.`;
   } else if (onboardingComplete) {
     liveSubhead = `${deviceLabel} is paired and reachable. Import an IPA to sign and install it.`;
   } else if (systemReady) {
@@ -130,8 +144,10 @@ export function Dashboard({
   }
 
   const subtitle = live
-    ? hasApps && deviceLabel
-      ? `Apps · ${deviceLabel}`
+    ? hasApps
+      ? appDeviceCount > 1
+        ? "Apps"
+        : `Apps · ${apps[0]?.deviceName ?? deviceLabel ?? "device"}`
       : onboardingComplete
         ? "Ready to install"
         : systemReady
@@ -168,6 +184,9 @@ export function Dashboard({
           <Sidebar
             active={active}
             device={device ?? null}
+            devices={devices}
+            selectedUdid={device?.udid ?? null}
+            onSelectDevice={onSelectDevice}
             agentActive={agentEnabled}
             agentDetail={agentDetail}
             onNavigate={onNavigate}
@@ -618,18 +637,49 @@ function LiveApps({
   apps: InstalledApp[];
   onRefreshApp?: (app: InstalledApp) => void;
 }) {
+  // Group installs by device so each Apollo-on-two-devices reads unambiguously.
+  // Groups appear in first-appearance order of the (expiration-sorted) list, so
+  // the device with the most urgent app stays near the top. A device's name
+  // rides on its install records, so groups label correctly even when the
+  // device is offline. Single-device installs render as one (unlabelled-feeling)
+  // group — still correct, and the header already names the device.
+  const groups: { udid: string; name: string; apps: InstalledApp[] }[] = [];
+  const byUdid = new Map<string, (typeof groups)[number]>();
+  for (const a of apps) {
+    let g = byUdid.get(a.deviceUdid);
+    if (!g) {
+      g = { udid: a.deviceUdid, name: a.deviceName, apps: [] };
+      byUdid.set(a.deviceUdid, g);
+      groups.push(g);
+    }
+    g.apps.push(a);
+  }
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
-      <div className="grid grid-cols-2 gap-3">
-        {apps.map((a) => (
-          <AppCard
-            key={a.installationId}
-            app={toSampleApp(a)}
-            live
-            onRefresh={onRefreshApp ? () => onRefreshApp(a) : undefined}
-          />
-        ))}
-      </div>
+    <div className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-5">
+      {groups.map((g) => (
+        <section key={g.udid}>
+          <div className="mb-2 flex items-center gap-2">
+            <Icon name="smartphone" size={13} className="text-slate-400" />
+            <h2 className="text-[12px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {g.name}
+            </h2>
+            <span className="text-[12px] text-slate-400 dark:text-slate-500">
+              {g.apps.length} app{g.apps.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {g.apps.map((a) => (
+              <AppCard
+                key={a.installationId}
+                app={toSampleApp(a)}
+                live
+                onRefresh={onRefreshApp ? () => onRefreshApp(a) : undefined}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

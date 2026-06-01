@@ -13,14 +13,8 @@
 
 import type { ReactNode } from "react";
 import { Button, Icon, Badge, StatusDot, cn, type IconName } from "../components/ui";
-import {
-  asCommandError,
-  type CommandError,
-  type DeviceInfo,
-  type TunnelStatus,
-  type WifiAvailability,
-} from "../lib/ipc";
-import type { DevModeState, TunnelPhase, WifiPhase } from "./Pairing";
+import { asCommandError, type CommandError, type DeviceInfo } from "../lib/ipc";
+import type { DevModeState } from "./Pairing";
 
 export function Devices({
   devices,
@@ -28,16 +22,8 @@ export function Devices({
   onSelect,
   paired,
   developerMode,
-  tunnelPhase,
-  tunnelStatus,
-  tunnelError,
-  wifiPhase,
-  wifiAvailability,
-  wifiError,
   onPair,
   onRecheckDevMode,
-  onEstablishTunnel,
-  onCheckWifi,
   // Cold-start Wi-Fi reachability (zero connected devices).
   wifiReachable = false,
   wifiChecking = false,
@@ -52,17 +38,9 @@ export function Devices({
   /** Whether the selected device has a saved pairing record. */
   paired: boolean;
   developerMode: DevModeState;
-  tunnelPhase: TunnelPhase;
-  tunnelStatus?: TunnelStatus;
-  tunnelError?: CommandError | null;
-  wifiPhase: WifiPhase;
-  wifiAvailability?: WifiAvailability;
-  wifiError?: CommandError | null;
   /** Opens the trust modal. Undefined when no USB device is pairable. */
   onPair?: () => void;
   onRecheckDevMode?: () => void;
-  onEstablishTunnel?: () => void;
-  onCheckWifi?: () => void;
   wifiReachable?: boolean;
   wifiChecking?: boolean;
   resolving?: boolean;
@@ -125,16 +103,9 @@ export function Devices({
               <ConnectionLadder
                 paired={paired}
                 developerMode={developerMode}
-                tunnelPhase={tunnelPhase}
-                tunnelStatus={tunnelStatus}
-                tunnelError={tunnelError ?? null}
-                wifiPhase={wifiPhase}
-                wifiAvailability={wifiAvailability}
-                wifiError={wifiError ?? null}
+                wifi={selected.wifi}
                 onPair={onPair}
                 onRecheckDevMode={onRecheckDevMode}
-                onEstablishTunnel={onEstablishTunnel}
-                onCheckWifi={onCheckWifi}
               />
             </>
           )}
@@ -205,9 +176,12 @@ function DeviceHero({
         ? `Connected over ${conn} · paired, but not ready to refresh yet`
         : `Connected over ${conn} · pair to start`;
 
+  // Model is shown only when known — it's persisted from a USB install and a
+  // Wi-Fi read can't be trusted for it, so an empty "Model: —" would just be
+  // noise. iOS / Connection / UDID are always present.
   const fields: Array<{ k: string; v: ReactNode; mono?: boolean }> = [
     { k: "iOS", v: device.iosVersion ?? "—" },
-    { k: "Model", v: device.productType ?? "—" },
+    ...(device.productType ? [{ k: "Model", v: device.productType }] : []),
     { k: "Connection", v: conn },
     { k: "UDID", v: `${device.udid.slice(0, 8)}…${device.udid.slice(-4)}`, mono: true },
   ];
@@ -252,32 +226,19 @@ type StepKind = "done" | "current" | "warn" | "loading" | "locked";
 function ConnectionLadder({
   paired,
   developerMode,
-  tunnelPhase,
-  tunnelStatus,
-  tunnelError,
-  wifiPhase,
-  wifiAvailability,
-  wifiError,
+  wifi,
   onPair,
   onRecheckDevMode,
-  onEstablishTunnel,
-  onCheckWifi,
 }: {
   paired: boolean;
   developerMode: DevModeState;
-  tunnelPhase: TunnelPhase;
-  tunnelStatus?: TunnelStatus;
-  tunnelError: CommandError | null;
-  wifiPhase: WifiPhase;
-  wifiAvailability?: WifiAvailability;
-  wifiError: CommandError | null;
+  /** Whether the selected device is currently reached over Wi-Fi (vs USB). */
+  wifi: boolean;
   onPair?: () => void;
   onRecheckDevMode?: () => void;
-  onEstablishTunnel?: () => void;
-  onCheckWifi?: () => void;
 }) {
   const devOn = developerMode === "on";
-  const tunnelOn = tunnelPhase === "connected";
+  const transport = wifi ? "Wi-Fi" : "USB";
 
   // ---- Step 1: Paired ----
   const s1: StepProps = paired
@@ -294,28 +255,35 @@ function ConnectionLadder({
       };
 
   // ---- Step 2: Developer Mode ----
+  // Over Wi-Fi the status comes from the last value cached over USB (an install
+  // or an explicit read) — a live read needs the cable. "unknown" means we've
+  // never seen it, so the fix is a one-time USB check.
   let s2: StepProps;
   if (!paired) {
     s2 = { kind: "locked", title: "Developer Mode", desc: "Available once the device is paired." };
   } else if (developerMode === "checking" || developerMode === "idle") {
     s2 = { kind: "loading", title: "Developer Mode", desc: "Checking Developer Mode…" };
   } else if (devOn) {
-    s2 = { kind: "done", title: "Developer Mode", desc: "On — required by iOS 17.4+ for installs." };
+    s2 = {
+      kind: "done",
+      title: "Developer Mode",
+      desc: wifi ? "On (last confirmed over USB)." : "On — required by iOS 17.4+ for installs.",
+    };
   } else {
     const off = developerMode === "off";
     s2 = {
       kind: "warn",
-      title: off ? "Developer Mode is off" : "Couldn't read Developer Mode",
+      title: off ? "Developer Mode is off" : "Confirm Developer Mode over USB",
       desc: off ? (
         <>
-          iOS 17.4+ needs it for installs. On the iPhone:{" "}
+          iOS 17.4+ needs it for installs. On the device:{" "}
           <span className="font-medium text-slate-700 dark:text-slate-200">
             Settings → Privacy &amp; Security → Developer Mode
           </span>
           , toggle on, then restart.
         </>
       ) : (
-        "Make sure the device is unlocked and still connected, then re-check."
+        "Connect the device over USB once and re-check — Developer Mode can't be read over Wi-Fi."
       ),
       action: onRecheckDevMode && (
         <Button size="sm" variant="outline" iconLeft="refresh" onClick={onRecheckDevMode}>
@@ -325,104 +293,28 @@ function ConnectionLadder({
     };
   }
 
-  // ---- Step 3: Secure tunnel ----
-  let s3: StepProps;
-  if (!devOn) {
-    s3 = { kind: "locked", title: "Secure tunnel", desc: "Available once Developer Mode is on." };
-  } else if (tunnelPhase === "connecting") {
-    s3 = { kind: "loading", title: "Secure tunnel", desc: "Establishing an RSD tunnel to the device…" };
-  } else if (tunnelOn && tunnelStatus?.endpoint) {
-    s3 = {
-      kind: "done",
-      title: "Secure tunnel",
-      desc: (
-        <span className="font-mono">
-          RSD {tunnelStatus.endpoint.serverAddress}:{tunnelStatus.endpoint.rsdPort} · {tunnelStatus.services.length}{" "}
-          services
-        </span>
-      ),
-    };
-  } else if (tunnelPhase === "error") {
-    s3 = {
-      kind: "warn",
-      title: "Couldn't establish the tunnel",
-      desc: tunnelError?.remediation ?? "The RSD tunnel failed. Try again.",
-      action: onEstablishTunnel && (
-        <Button size="sm" variant="outline" iconLeft="rotate" onClick={onEstablishTunnel}>
-          Retry
-        </Button>
-      ),
-    };
-  } else {
-    s3 = {
-      kind: "current",
-      title: "Secure tunnel",
-      desc: "Connect to the device's developer services over an RSD tunnel.",
-      action: onEstablishTunnel && (
-        <Button size="sm" onClick={onEstablishTunnel}>
-          Establish tunnel
-        </Button>
-      ),
-    };
-  }
+  // ---- Step 3: Ready to refresh ----
+  // The actual sign+refresh runs through the external signer over the device's
+  // current muxer (USB or netmuxd for Wi-Fi) — it does NOT use ReSide's
+  // in-process RSD tunnel, so readiness is just paired + Developer Mode on.
+  const s3: StepProps = !devOn
+    ? { kind: "locked", title: "Ready to refresh", desc: "Available once Developer Mode is on." }
+    : {
+        kind: "done",
+        title: "Ready to refresh",
+        desc: `Set — ReSide can sign & refresh this device over ${transport}. The background agent can re-sign here too.`,
+      };
 
-  // ---- Step 4: Wi-Fi refresh ----
-  let s4: StepProps;
-  if (!tunnelOn) {
-    s4 = { kind: "locked", title: "Wi-Fi refresh", desc: "Available once the tunnel is established." };
-  } else if (wifiPhase === "checking") {
-    s4 = { kind: "loading", title: "Wi-Fi refresh", desc: "Scanning the network for RemoteXPC endpoints…" };
-  } else if (wifiPhase === "done" && wifiAvailability?.available) {
-    const n = wifiAvailability.endpoints.length;
-    s4 = {
-      kind: "done",
-      title: "Wi-Fi refresh",
-      desc: `Reachable — ${n} RemoteXPC endpoint${n === 1 ? "" : "s"}. The background agent can re-sign here.`,
-    };
-  } else if (wifiPhase === "done" && wifiAvailability && !wifiAvailability.available) {
-    s4 = {
-      kind: "warn",
-      title: "Not reachable over Wi-Fi yet",
-      desc: "Make sure the device is on the same network and unlocked, then re-check. USB still works.",
-      action: onCheckWifi && (
-        <Button size="sm" variant="outline" iconLeft="refresh" onClick={onCheckWifi}>
-          Re-check
-        </Button>
-      ),
-    };
-  } else if (wifiPhase === "error") {
-    s4 = {
-      kind: "warn",
-      title: "Couldn't scan the network",
-      desc: wifiError?.remediation ?? "The Wi-Fi scan failed. Try again.",
-      action: onCheckWifi && (
-        <Button size="sm" variant="outline" iconLeft="rotate" onClick={onCheckWifi}>
-          Retry
-        </Button>
-      ),
-    };
-  } else {
-    s4 = {
-      kind: "current",
-      title: "Wi-Fi refresh",
-      desc: "Check whether this device can be reached over Wi-Fi for background refresh.",
-      action: onCheckWifi && (
-        <Button size="sm" onClick={onCheckWifi}>
-          Check Wi-Fi
-        </Button>
-      ),
-    };
-  }
-
-  const steps = [s1, s2, s3, s4];
+  const steps = [s1, s2, s3];
   const doneCount = steps.filter((s) => s.kind === "done").length;
+  const ready = doneCount === steps.length;
 
   return (
     <div className="mt-5">
       <div className="mb-3 flex items-baseline justify-between">
         <div className="text-[13.5px] font-semibold">Connection</div>
         <div className="text-[11.5px] text-slate-500 dark:text-slate-400">
-          {doneCount === 4 ? "Ready to sign & refresh over Wi-Fi" : `Step ${Math.min(doneCount + 1, 4)} of 4`}
+          {ready ? `Ready to sign & refresh over ${transport}` : `Step ${Math.min(doneCount + 1, steps.length)} of ${steps.length}`}
         </div>
       </div>
       <div>

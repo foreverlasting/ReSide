@@ -23,9 +23,10 @@ fork (`foreverlasting/Sideloader`, branch `reside-automation`), and the
 sidebar (§7h), System view (§7d gap closed), Activity view (§7a), and the Devices
 in-shell pane + trust modal (§7e/§7f). It landed across PR #15 (§7a–g), #16
 (§7i/§7j), and #19 (§7h + §7e + §7f, squash `2368894`). All merged `ux-*` feature
-branches are deleted. **In flight (2026-05-31):** §7k (pairing auto-chain +
-per-device paired signal) is implemented on branch `ux-pairing-autochain` — four
-gates green, not yet on main, pending hardware verify. See the §7k Completed entry.
+branches are deleted. **§7k + the multi-device / Wi-Fi-ladder work landed on main
+2026-05-31** (PR #27, squash `40dc942`) — per-device readiness, multi-device
+correctness, and a remodeled Wi-Fi ladder; hardware-verified (Wi-Fi refresh
+confirmed working end-to-end). See the §7k Completed entry.
 
 **Latest release: v0.5.1** (2026-05-30, tag `v0.5.1`) — a patch over v0.5.0
 carrying the §8 certificate work (clearer cap message + parser hardening). It was
@@ -149,6 +150,21 @@ non-interactive login) and is good open-source citizenship.
 
 **Done when:** the PR is open upstream.
 
+## §7l. Retire (or repurpose) the titlebar "Tunnel" pill
+
+**Why:** the §7k remodel established that the in-process RSD tunnel is *not* on the
+install/refresh path — nothing establishes one anymore — so the titlebar pill
+(`get_tunnel_status` → `any_connected`) now reads permanently "No tunnel." A
+forever-off indicator is noise that implies something's broken when it isn't.
+
+**Scope:** hide the pill (keep the `TunnelManager`/`get_tunnel_status` backend infra
+dormant per the §7k decision), OR repurpose it into a signal that reflects real
+state (e.g. selected-device reachability USB/Wi-Fi). Smallest honest fix is to drop
+the pill from the titlebar in `ReSideApp.tsx`/`chrome.tsx`.
+
+**Done when:** the titlebar no longer shows a permanently-off "Tunnel" indicator;
+the tunnel backend stays compiled and callable (not deleted).
+
 ---
 
 # Completed
@@ -231,8 +247,8 @@ Condensed; load-bearing gotchas retained.
   so per-device queries re-scope. Developer Mode gated on the STANDING paired state, not
   the transient pair phase. No "Forget" control (no backend unpair — §7b rule). Artboards
   in `docs/artboards/devices-pane*.html`. **Deferred → §7k.**
-- **§7k. Pairing auto-chain + per-device paired signal** — DONE 2026-05-31 (branch
-  `ux-pairing-autochain`, pending hardware verify). Three parts:
+- **§7k. Pairing auto-chain + per-device paired signal** — DONE 2026-05-31, on main
+  (PR #27, squash `40dc942`), hardware-verified. Three parts:
   (1) **Per-device paired signal** — `DeviceInfo.paired` reads straight from the
   usbmuxd trust store (`annotate_paired` → `get_pair_record` per UDID); the ladder's
   `selectedPaired` keys off the *selected* device (OR'd with this session's
@@ -300,9 +316,9 @@ Condensed; load-bearing gotchas retained.
   the fast USB read fails). The §7k auto-chain + per-device tunnel UI wiring were
   removed; the per-device **paired signal** (part 1) and the in-process RSD tunnel
   **infra** (`TunnelManager`, `establish_tunnel*`, titlebar pill) stay (dormant, kept
-  for future in-process RemoteXPC work — user's call). *Loose end:* the titlebar
-  "Tunnel" pill now reads permanently "No tunnel" (nothing establishes one) — hide or
-  repurpose later. Also fixed this pass: sidebar lists **all** located devices
+  for future in-process RemoteXPC work — user's call). *Loose end → §7l:* the titlebar
+  "Tunnel" pill now reads permanently "No tunnel" (nothing establishes one). Also
+  fixed this pass: sidebar lists **all** located devices
   (selectable), and the Model field is hidden when unknown rather than showing "—".
 
 ## Standing constraints
@@ -311,3 +327,23 @@ User is **not a developer** — explain plainly, hand off a concrete thing to ch
 each round. Commit only when asked. Don't bump pinned deps. Keep the four gates
 green. Device/Apple behavior validates only on the user's hardware. Full norms +
 gotchas in `docs/ARCHITECTURE.md`.
+
+## Lessons learned (2026-05-31, §7k / multi-device work)
+
+- **Verify gates by a command's *own* exit code — never through a pipe.** `cargo fmt
+  --all -- --check | tail` (and `gh run watch … | tail`) report the *pipe's* exit
+  (tail's `0`), masking a real failure. This produced a false-green local fmt check
+  and a red CI run (PR #27, first attempt). Run gate commands unpiped, or check the
+  right element's status; treat any "clean" result that also printed diff lines as a
+  failure.
+- **The in-process RSD tunnel is NOT on the install/refresh path.** Install/refresh
+  route through the external signer over netmuxd (`route_to` → `USBMUXD_SOCKET_ADDRESS`;
+  the signer does its own iOS-17.4 tunneling). `TunnelManager`/`establish_tunnel*` have
+  zero non-UI callers. Don't gate refresh-readiness on ReSide's own tunnel, and don't
+  rebuild a feature assuming it's load-bearing — it isn't (yet). (Drove the §7k ladder
+  remodel; see §7l for the leftover pill.)
+- **Confirm a capability on hardware before redesigning UI around it.** Verifying Wi-Fi
+  refresh actually worked (DB expiry delta + activity row) *before* remodeling the
+  ladder turned an assumption into a fact and avoided building the wrong thing.
+- **Over Wi-Fi, trust persisted (USB-captured) DB identity over live netmuxd reads** —
+  the netmuxd lockdown read can return the wrong device's name/version/model.

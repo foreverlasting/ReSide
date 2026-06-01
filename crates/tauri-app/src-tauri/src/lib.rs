@@ -129,10 +129,78 @@ async fn establish_tunnel(
     Ok(state.tunnels.connect_usb(&udid).await?)
 }
 
-/// Enumerate connected devices over usbmuxd (USB + network).
+/// Establish the RSD tunnel for a device on a specific transport (ROADMAP §7k):
+/// the ladder calls this with the device's *current* reach so moving between
+/// cable and Wi-Fi re-establishes rather than reusing a stale tunnel. Wi-Fi
+/// tunnels are a later slice and fail with `WifiTunnelUnsupported` for now.
 #[tauri::command]
-async fn list_devices() -> CmdResult<Vec<reside_core::device::DeviceInfo>> {
-    Ok(reside_core::device::list_devices().await?)
+async fn establish_tunnel_for_transport(
+    state: tauri::State<'_, AppState>,
+    udid: String,
+    wifi: bool,
+) -> CmdResult<reside_core::transport::tunneld::TunnelStatus> {
+    Ok(state.tunnels.connect(&udid, wifi).await?)
+}
+
+/// Per-device tunnel status (ROADMAP §7k): connected only if we hold a live
+/// tunnel for this exact UDID, with the transport it came up on. Backs the
+/// device-scoped ladder rung, distinct from the aggregate titlebar pill.
+#[tauri::command]
+async fn tunnel_status_for(
+    state: tauri::State<'_, AppState>,
+    udid: String,
+) -> CmdResult<reside_core::transport::tunneld::TunnelStatus> {
+    Ok(state.tunnels.status(&udid).await)
+}
+
+/// A device's identity as persisted at install time (over USB, reliable).
+#[derive(sqlx::FromRow)]
+struct DeviceIdentity {
+    udid: String,
+    name: String,
+    ios_version: Option<String>,
+    product_type: Option<String>,
+}
+
+/// Enumerate connected devices over usbmuxd (USB + network).
+///
+/// The per-device lockdown read over the Wi-Fi (netmuxd) path is unreliable — it
+/// can hand back the *wrong* device's name/version/model (observed on hardware:
+/// an iPhone and iPad both reading as the iPad). For any device we've paired or
+/// installed before, the `devices` table holds its true identity (captured over
+/// USB), so we use that for Wi-Fi rows. USB rows keep their live read, which is
+/// reliable and current. Model (`product_type`) is only persisted from newer
+/// installs, so a known Wi-Fi device may show no model until its next USB
+/// install/refresh — better than confidently showing the wrong one.
+#[tauri::command]
+async fn list_devices(
+    state: tauri::State<'_, AppState>,
+) -> CmdResult<Vec<reside_core::device::DeviceInfo>> {
+    let mut devices = reside_core::device::list_devices().await?;
+
+    let known: std::collections::HashMap<String, DeviceIdentity> =
+        sqlx::query_as::<_, DeviceIdentity>(
+            "SELECT udid, name, ios_version, product_type FROM devices",
+        )
+        .fetch_all(&state.db)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|d| (d.udid.clone(), d))
+        .collect();
+
+    for dev in &mut devices {
+        if !dev.wifi {
+            continue;
+        }
+        if let Some(id) = known.get(&dev.udid) {
+            dev.name = Some(id.name.clone());
+            dev.ios_version = id.ios_version.clone();
+            dev.product_type = id.product_type.clone();
+        }
+    }
+
+    Ok(devices)
 }
 
 /// Pair with a device over USB. Blocks until the user responds to the on-device
@@ -143,11 +211,48 @@ async fn pair_device(udid: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// Read whether Developer Mode is enabled on a (paired) device. Requires a
-/// stored pair record; iOS 17.4+ needs Developer Mode for install flows.
+/// Read whether Developer Mode is enabled on a (paired) device. iOS 17.4+ needs
+/// it for install flows, so the Devices ladder gates on it.
+///
+/// A live read only works over USB (it goes through the system usbmuxd). Over
+/// Wi-Fi the device isn't on that socket, so the read fails *fast* — and we fall
+/// back to the value last cached from a USB read or a successful install/refresh
+/// (`developer_mode_checked_ts` non-null). That lets the Wi-Fi ladder show
+/// Developer Mode without a slow netmuxd respawn. A successful live read also
+/// refreshes the cache.
 #[tauri::command]
-async fn developer_mode_status(udid: String) -> CmdResult<bool> {
-    Ok(reside_core::device::developer_mode_status(&udid).await?)
+async fn developer_mode_status(state: tauri::State<'_, AppState>, udid: String) -> CmdResult<bool> {
+    match reside_core::device::developer_mode_status(&udid).await {
+        Ok(on) => {
+            // Refresh the cache so a later Wi-Fi read has a current value.
+            let _ = sqlx::query(
+                "UPDATE devices SET developer_mode_enabled = ?1, developer_mode_checked_ts = ?2 WHERE udid = ?3",
+            )
+            .bind(on as i64)
+            .bind(unix_now())
+            .bind(&udid)
+            .execute(&state.db)
+            .await;
+            Ok(on)
+        }
+        Err(e) => {
+            // Live read failed — likely a Wi-Fi device, off the USB socket. Use
+            // the cached status if we've ever known it; otherwise surface the
+            // original error so the ladder can prompt a one-time USB check.
+            let cached: Option<(i64, Option<i64>)> = sqlx::query_as(
+                "SELECT developer_mode_enabled, developer_mode_checked_ts FROM devices WHERE udid = ?1",
+            )
+            .bind(&udid)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten();
+            match cached {
+                Some((enabled, Some(_checked))) => Ok(enabled != 0),
+                _ => Err(e.into()),
+            }
+        }
+    }
 }
 
 /// Browse the local network (mDNS) for RemoteXPC-capable iOS endpoints. Reports
@@ -474,11 +579,13 @@ async fn device_row_for(udid: &str) -> reside_core::installs::DeviceRow {
             udid: d.udid,
             name: d.name,
             ios_version: d.ios_version,
+            product_type: d.product_type,
         },
         None => reside_core::installs::DeviceRow {
             udid: udid.to_string(),
             name: None,
             ios_version: None,
+            product_type: None,
         },
     }
 }
@@ -491,19 +598,26 @@ pub struct InstalledApp {
     bundle_id: String,
     version: Option<String>,
     device_udid: String,
+    /// Human name of the device this app is installed on, from the persisted
+    /// `devices` row — so the Apps grid can group by device even when that
+    /// device isn't currently connected (the install record outlives the cable).
+    device_name: String,
     install_ts: i64,
     expiration_ts: i64,
     refresh_status: String,
 }
 
-/// List installed apps (joined with their app metadata), soonest-to-expire
-/// first — the Dashboard's live app grid.
+/// List installed apps (joined with their app metadata + the device they're on),
+/// soonest-to-expire first — the Dashboard's live app grid.
 #[tauri::command]
 async fn list_apps(state: tauri::State<'_, AppState>) -> CmdResult<Vec<InstalledApp>> {
     let rows = sqlx::query_as::<_, InstalledApp>(
         "SELECT i.id AS installation_id, a.display_name, a.bundle_id, a.version, \
-                i.device_udid, i.install_ts, i.expiration_ts, i.refresh_status \
-         FROM installations i JOIN apps a ON a.id = i.app_id \
+                i.device_udid, d.name AS device_name, \
+                i.install_ts, i.expiration_ts, i.refresh_status \
+         FROM installations i \
+         JOIN apps a ON a.id = i.app_id \
+         JOIN devices d ON d.udid = i.device_udid \
          ORDER BY i.expiration_ts ASC",
     )
     .fetch_all(&state.db)
@@ -837,6 +951,8 @@ pub fn run() {
             run_setup_check,
             get_tunnel_status,
             establish_tunnel,
+            establish_tunnel_for_transport,
+            tunnel_status_for,
             list_devices,
             pair_device,
             developer_mode_status,

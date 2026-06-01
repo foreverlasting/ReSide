@@ -476,21 +476,23 @@ async fn load_installation(pool: &SqlitePool, installation_id: i64) -> Result<Du
 /// Best-effort device identity from the `devices` row written at install time;
 /// falls back to just the UDID if the row is somehow absent.
 async fn device_row(pool: &SqlitePool, udid: &str) -> Result<DeviceRow> {
-    let found: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT name, ios_version FROM devices WHERE udid = ?1")
+    let found: Option<(String, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT name, ios_version, product_type FROM devices WHERE udid = ?1")
             .bind(udid)
             .fetch_optional(pool)
             .await?;
     Ok(match found {
-        Some((name, ios_version)) => DeviceRow {
+        Some((name, ios_version, product_type)) => DeviceRow {
             udid: udid.to_string(),
             name: Some(name),
             ios_version,
+            product_type,
         },
         None => DeviceRow {
             udid: udid.to_string(),
             name: None,
             ios_version: None,
+            product_type: None,
         },
     })
 }
@@ -656,6 +658,7 @@ mod tests {
             udid: format!("00008150-{key}"),
             name: Some("Test iPhone".into()),
             ios_version: Some("26.5".into()),
+            product_type: Some("iPhone16,2".into()),
         };
         let meta = IpaMetadata {
             display_name: format!("App {key}"),

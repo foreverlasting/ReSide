@@ -37,6 +37,9 @@ pub struct DeviceRow {
     pub udid: String,
     pub name: Option<String>,
     pub ios_version: Option<String>,
+    /// Hardware model (e.g. "iPad13,4"), persisted so the device list can show a
+    /// correct model later even when a live read can't. `None` when unread.
+    pub product_type: Option<String>,
 }
 
 /// Everything needed to record one successful install.
@@ -79,18 +82,26 @@ pub async fn record_install(pool: &SqlitePool, rec: &InstallRecord<'_>) -> Resul
 
     let mut tx = pool.begin().await?;
 
-    // 1. Device row (FK target for installations).
+    // 1. Device row (FK target for installations). `product_type` is captured
+    //    here over USB so the list can show a correct model later even when a
+    //    Wi-Fi read can't (COALESCE keeps a prior value if this read was blank).
+    //    A successful install requires Developer Mode (iOS 17.4+), so we record
+    //    it as known-on — this seeds the cache the Wi-Fi ladder reads.
     sqlx::query(
-        "INSERT INTO devices (udid, name, ios_version, pairing_status, last_seen) \
-         VALUES (?1, ?2, ?3, 'paired', ?4) \
+        "INSERT INTO devices (udid, name, ios_version, product_type, pairing_status, last_seen, developer_mode_enabled, developer_mode_checked_ts) \
+         VALUES (?1, ?2, ?3, ?4, 'paired', ?5, 1, ?5) \
          ON CONFLICT(udid) DO UPDATE SET \
             name = excluded.name, \
             ios_version = COALESCE(excluded.ios_version, devices.ios_version), \
-            last_seen = excluded.last_seen",
+            product_type = COALESCE(excluded.product_type, devices.product_type), \
+            last_seen = excluded.last_seen, \
+            developer_mode_enabled = 1, \
+            developer_mode_checked_ts = excluded.last_seen",
     )
     .bind(&rec.device.udid)
     .bind(&device_name)
     .bind(&rec.device.ios_version)
+    .bind(&rec.device.product_type)
     .bind(rec.installed_at)
     .execute(&mut *tx)
     .await?;
@@ -219,6 +230,7 @@ mod tests {
                 udid: "00008110-DEADBEEF".into(),
                 name: Some("Eric's iPhone".into()),
                 ios_version: Some("26.5".into()),
+                product_type: Some("iPhone16,2".into()),
             },
             IpaMetadata {
                 display_name: "Apollo".into(),

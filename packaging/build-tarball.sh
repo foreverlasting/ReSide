@@ -6,14 +6,18 @@
 # the release binary with `tauri build --no-bundle` and stage it ourselves
 # alongside the two helper binaries ReSide spawns at runtime:
 #
-#   reside       the app                          (GPL-3.0)
-#   sideloader   the forked Dadoum signer         (GPL-3.0)   — prebuilt, see env-sideloader-build
-#   netmuxd      the on-demand Wi-Fi mux bridge    (LGPL-2.1)  — `cargo build --release`
+#   reside        the app                          (GPL-3.0)
+#   reside-agent  the headless auto-refresh agent  (GPL-3.0)   — `cargo build --release`
+#   sideloader    the forked Dadoum signer         (GPL-3.0)   — prebuilt, see env-sideloader-build
+#   netmuxd       the on-demand Wi-Fi mux bridge    (LGPL-2.1)  — `cargo build --release`
 #
-# All three land in the SAME directory: reside-core resolves a helper "beside the
+# All four land in the SAME directory: reside-core resolves a helper "beside the
 # running executable" (crates/core/src/locate.rs), so no env vars or absolute
 # paths are baked in — and that absolute "beside" path is also what lets the
-# unattended refresh agent self-configure its systemd unit.
+# unattended refresh agent self-configure its systemd unit. `reside-agent` MUST
+# ship: the app resolves it next to itself when you enable auto-refresh
+# (agent_exec_path), so without it the toggle fails with "background agent not
+# found" and auto-refresh is dead on a fresh install.
 #
 # The helper binaries live outside this repo; point at them with env overrides if
 # your checkout isn't laid out as ../sideloader-fork and ../netmuxd next to this
@@ -38,6 +42,7 @@ SIDELOADER_SRC="${RESIDE_SIDELOADER_SRC:-$REPO_ROOT/../sideloader-fork/bin/sidel
 NETMUXD_SRC="${RESIDE_NETMUXD_SRC:-$REPO_ROOT/../netmuxd/target/release/netmuxd}"
 
 RESIDE_BIN="$REPO_ROOT/target/release/reside"
+AGENT_BIN="$REPO_ROOT/target/release/reside-agent"
 STAGE_DIR="$REPO_ROOT/target/release-tarball/$NAME"
 OUT_TARBALL="$REPO_ROOT/target/release-tarball/${NAME}.tar.gz"
 
@@ -67,12 +72,19 @@ say "Building frontend + release binary (tauri build --no-bundle)…"
     && pnpm --config.verifyDepsBeforeRun=false tauri build --no-bundle )
 [ -f "$RESIDE_BIN" ] || die "expected binary not produced at $RESIDE_BIN"
 
+# --- build the headless refresh agent (separate workspace crate; tauri build
+# only produces the app binary) ---------------------------------------------
+say "Building reside-agent (cargo build --release)…"
+cargo build --release -p reside-agent
+[ -f "$AGENT_BIN" ] || die "expected agent binary not produced at $AGENT_BIN"
+
 # --- stage ------------------------------------------------------------------
 say "Staging $NAME/"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 
 install -m 0755 "$RESIDE_BIN"      "$STAGE_DIR/reside"
+install -m 0755 "$AGENT_BIN"       "$STAGE_DIR/reside-agent"
 install -m 0755 "$SIDELOADER_SRC"  "$STAGE_DIR/sideloader"
 install -m 0755 "$NETMUXD_SRC"     "$STAGE_DIR/netmuxd"
 
@@ -92,12 +104,21 @@ install -m 0644 LICENSE      "$STAGE_DIR/LICENSE"
 install -m 0644 LICENSES.md  "$STAGE_DIR/LICENSES.md"
 
 # strip the binaries we built/ship to shrink the tarball (helpers may already be stripped)
-strip --strip-unneeded "$STAGE_DIR/reside" "$STAGE_DIR/netmuxd" 2>/dev/null || true
+strip --strip-unneeded "$STAGE_DIR/reside" "$STAGE_DIR/reside-agent" "$STAGE_DIR/netmuxd" 2>/dev/null || true
 
 # --- pack -------------------------------------------------------------------
 say "Packing ${NAME}.tar.gz"
 rm -f "$OUT_TARBALL"
 tar -C "$(dirname "$STAGE_DIR")" -czf "$OUT_TARBALL" "$NAME"
+
+# --- regression guard: every runtime binary must be in the tarball ----------
+# auto-refresh silently shipped broken for v0.4.1–v0.5.3 because reside-agent
+# was never staged. Fail the build loudly if any of the four go missing again.
+contents="$(tar -tzf "$OUT_TARBALL")"
+for b in reside reside-agent sideloader netmuxd; do
+  printf '%s\n' "$contents" | grep -qx "$NAME/$b" \
+    || die "tarball is missing required binary: $b (packaging regression)"
+done
 
 # --- report -----------------------------------------------------------------
 SIZE="$(du -h "$OUT_TARBALL" | cut -f1)"

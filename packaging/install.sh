@@ -4,7 +4,7 @@
 #
 # Installs into your home directory only — no root, no system files:
 #
-#   ~/.local/lib/reside/      reside, sideloader, netmuxd, reside.png  (kept together)
+#   ~/.local/lib/reside/      reside, reside-agent, sideloader, netmuxd, reside.png  (kept together)
 #   ~/.local/bin/reside       symlink onto the app  (so `reside` works from a terminal)
 #   ~/.local/share/applications/dev.reside.app.desktop   (so it shows in your menu)
 #   ~/.local/share/icons/hicolor/{scalable,32x32,128x128,256x256,512x512}/apps/reside.{svg,png}
@@ -82,7 +82,7 @@ uninstall() {
 [ "${1:-}" = "--uninstall" ] && uninstall
 
 # --- install ----------------------------------------------------------------
-for b in reside sideloader netmuxd; do
+for b in reside reside-agent sideloader netmuxd; do
   [ -f "$SRC_DIR/$b" ] || { printf 'error: missing %s next to this script — is the tarball intact?\n' "$b" >&2; exit 1; }
 done
 [ -d "$SRC_DIR/icons" ] || { printf 'error: missing icons/ next to this script — is the tarball intact?\n' >&2; exit 1; }
@@ -91,6 +91,7 @@ say "Installing ReSide into $PREFIX"
 mkdir -p "$LIBDIR" "$BINDIR" "$APPDIR"
 
 install -m 0755 "$SRC_DIR/reside"          "$LIBDIR/reside"
+install -m 0755 "$SRC_DIR/reside-agent"    "$LIBDIR/reside-agent"
 install -m 0755 "$SRC_DIR/sideloader"      "$LIBDIR/sideloader"
 install -m 0755 "$SRC_DIR/netmuxd"         "$LIBDIR/netmuxd"
 install -m 0644 "$SRC_DIR/icons/icon.png"  "$LIBDIR/reside.png"

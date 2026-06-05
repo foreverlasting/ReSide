@@ -139,7 +139,7 @@ export const Sidebar = ({
         <ReSideMark size={24} className="rounded-[6px]" />
         <div className="text-[14px] font-semibold tracking-tight">ReSide</div>
         <Badge tone="neutral" className="ml-auto text-[10px]">
-          v0.5
+          v{__APP_VERSION__}
         </Badge>
       </div>
 

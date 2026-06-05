@@ -24,8 +24,21 @@ pub async fn open(path: impl AsRef<Path>) -> Result<SqlitePool> {
         .max_connections(5)
         .connect_with(opts)
         .await?;
-    MIGRATOR.run(&pool).await?;
+    run_migrations(&pool).await?;
     Ok(pool)
+}
+
+/// Run pending migrations, translating the one failure mode a *released* binary
+/// can hit when the user also runs a newer build against the same data dir: the
+/// DB has an applied migration this binary's migrator doesn't contain. sqlx
+/// reports that as `VersionMissing`; we surface it as the actionable
+/// [`AppError::DatabaseTooNew`] (→ "update ReSide") instead of a generic
+/// "migration error".
+async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    MIGRATOR.run(pool).await.map_err(|e| match e {
+        sqlx::migrate::MigrateError::VersionMissing(v) => crate::error::AppError::DatabaseTooNew(v),
+        other => other.into(),
+    })
 }
 
 /// Open an in-memory database with migrations applied (for tests).
@@ -35,7 +48,7 @@ pub async fn open_in_memory() -> Result<SqlitePool> {
         .max_connections(1)
         .connect_with(opts)
         .await?;
-    MIGRATOR.run(&pool).await?;
+    run_migrations(&pool).await?;
     Ok(pool)
 }
 
@@ -89,5 +102,36 @@ mod tests {
         .execute(&pool)
         .await;
         assert!(res.is_err(), "foreign key violation should be rejected");
+    }
+
+    /// A DB that carries a migration this build doesn't know about (i.e. it was
+    /// written by a *newer* ReSide) must open as the actionable
+    /// `DatabaseTooNew`, not a generic migration error. Reproduces the
+    /// downgrade collision a released binary hits against a data dir a newer
+    /// local build already migrated.
+    #[tokio::test]
+    async fn db_from_a_newer_build_reports_database_too_new() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("data.db");
+
+        // Migrate normally, then forge an applied migration from "the future".
+        let pool = open(&db).await.unwrap();
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations \
+             (version, description, installed_on, success, checksum, execution_time) \
+             VALUES (9999, 'from a newer ReSide', CURRENT_TIMESTAMP, 1, ?, 0)",
+        )
+        .bind(vec![0u8; 48])
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        // Reopening with this (older) migrator must detect the downgrade.
+        let err = open(&db).await.unwrap_err();
+        assert!(
+            matches!(err, crate::error::AppError::DatabaseTooNew(9999)),
+            "expected DatabaseTooNew(9999), got {err:?}"
+        );
     }
 }

@@ -167,6 +167,13 @@ pub enum AppError {
     Db(#[from] sqlx::Error),
     #[error("database migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// The on-disk database has a schema migration this build doesn't know
+    /// about — i.e. it was created by a *newer* ReSide. The inner value is the
+    /// offending migration version. A `MigrateError::VersionMissing` from the
+    /// migrator is mapped to this in `db::open` so the UI can say "update"
+    /// rather than the opaque "migration error".
+    #[error("the database was created by a newer version of ReSide (schema {0})")]
+    DatabaseTooNew(i64),
     #[error("serialization error")]
     Serialization(#[from] serde_json::Error),
     /// Free-form internal error. Use sparingly; prefer a typed variant.
@@ -206,7 +213,9 @@ impl AppError {
             InstallTransferFailed => ErrorCategory::InstallTransferFailed,
             InstallVerifyFailed => ErrorCategory::InstallVerifyFailed,
             WifiTunnelUnsupported => ErrorCategory::WifiTunnelUnsupported,
-            Io(_) | Db(_) | Migrate(_) | Serialization(_) | Internal(_) => ErrorCategory::Internal,
+            Io(_) | Db(_) | Migrate(_) | DatabaseTooNew(_) | Serialization(_) | Internal(_) => {
+                ErrorCategory::Internal
+            }
         }
     }
 
@@ -261,6 +270,9 @@ impl AppError {
             InstallVerifyFailed => "Install completed but verification failed.",
             WifiTunnelUnsupported => {
                 "Connecting over Wi-Fi isn't supported yet — connect the device via USB to establish the tunnel."
+            }
+            DatabaseTooNew(_) => {
+                "Your ReSide data was created by a newer version of the app. Update ReSide to the latest release, then reopen it."
             }
             Io(_) | Db(_) | Migrate(_) | Serialization(_) | Internal(_) => {
                 "Something went wrong inside ReSide — see logs or export a debug bundle."

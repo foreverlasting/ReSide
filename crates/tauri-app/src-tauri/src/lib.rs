@@ -788,6 +788,68 @@ fn agent_netmuxd_bin() -> Option<std::path::PathBuf> {
     bin.is_absolute().then_some(bin)
 }
 
+/// Report a fatal startup failure as visibly as possible, then exit. Called
+/// from the Tauri `setup` hook for storage-init errors that would otherwise
+/// become an invisible "Failed to setup app" panic when ReSide is launched from
+/// the desktop apps menu (`Terminal=false`, no console). `what` completes the
+/// sentence "ReSide could not start while trying to {what}".
+fn fatal_startup_error(paths: Option<&Paths>, what: &str, detail: &str) -> ! {
+    let msg = format!("ReSide could not start while trying to {what}.\n\n{detail}");
+    tracing::error!("{msg}");
+    eprintln!("{msg}");
+    // Breadcrumb on disk so a windowless (apps-menu) launch is still
+    // diagnosable after the fact, even if no dialog tool is installed.
+    if let Some(p) = paths {
+        let dir = p.logs_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join("startup-error.log"), &msg);
+    }
+    show_native_error("ReSide cannot start", &msg);
+    std::process::exit(1);
+}
+
+/// Best-effort native error popup that does **not** depend on Tauri's event
+/// loop (which isn't running yet during `setup`). Tries the common Linux
+/// desktop dialog tools in turn; if none are present the breadcrumb file and
+/// stderr above are the fallback. `status()` waits so the dialog stays up until
+/// dismissed rather than being killed by the immediately-following exit.
+fn show_native_error(title: &str, body: &str) {
+    use std::process::Command;
+    let attempts: [(&str, Vec<String>); 3] = [
+        (
+            "kdialog",
+            vec![
+                "--title".into(),
+                title.into(),
+                "--error".into(),
+                body.into(),
+            ],
+        ),
+        (
+            "zenity",
+            vec![
+                "--error".into(),
+                format!("--title={title}"),
+                format!("--text={body}"),
+            ],
+        ),
+        (
+            "notify-send",
+            vec!["-u".into(), "critical".into(), title.into(), body.into()],
+        ),
+    ];
+    for (bin, args) in attempts {
+        if Command::new(bin)
+            .args(&args)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return;
+        }
+    }
+}
+
 pub fn run() {
     // WebKitGTK rendering workaround for Linux/Wayland. On some setups
     // (notably CachyOS and other recent Wayland stacks) the WebView dies at
@@ -824,8 +886,20 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
-            let paths = Paths::resolve()?;
-            paths.ensure_dirs()?;
+            // Storage init is the one part of setup that can fail on a healthy
+            // machine (unwritable home, or — the case that motivated this — a
+            // data dir a *newer* ReSide already migrated past this build). A
+            // bare `?` here turns into Tauri's "Failed to setup app" panic,
+            // which is invisible when launched from the apps menu
+            // (`Terminal=false`). Surface it instead: log, drop a breadcrumb
+            // file, show a native dialog, then exit cleanly.
+            let paths = match Paths::resolve() {
+                Ok(p) => p,
+                Err(e) => fatal_startup_error(None, "locate its data directories", &e.to_string()),
+            };
+            if let Err(e) = paths.ensure_dirs() {
+                fatal_startup_error(Some(&paths), "create its data directories", &e.to_string());
+            }
 
             let (store, keyring_warning) = SecureStore::detect();
             if keyring_warning.is_some() {
@@ -834,7 +908,15 @@ pub fn run() {
                 );
             }
 
-            let db = tauri::async_runtime::block_on(reside_core::db::open(paths.database_file()))?;
+            let db = match tauri::async_runtime::block_on(reside_core::db::open(
+                paths.database_file(),
+            )) {
+                Ok(db) => db,
+                Err(e) => {
+                    let detail = format!("{e}\n\n{}", e.remediation());
+                    fatal_startup_error(Some(&paths), "open its database", &detail);
+                }
+            };
 
             // Bridge core operation events → frontend `operation_{id}` events.
             let ops = OperationChannel::new();

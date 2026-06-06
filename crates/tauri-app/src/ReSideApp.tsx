@@ -72,8 +72,15 @@ export function ReSideApp() {
     refetchInterval: 2000,
   });
 
-  // Installed apps for the live Dashboard grid.
-  const apps = useQuery({ queryKey: ["apps"], queryFn: api.listApps, enabled: isTauri() });
+  // Installed apps for the live Dashboard grid. Poll while open so the
+  // background agent's refreshes (which move expiration_ts in the DB from a
+  // separate process) surface without needing a restart or window re-focus.
+  const apps = useQuery({
+    queryKey: ["apps"],
+    queryFn: api.listApps,
+    enabled: isTauri(),
+    refetchInterval: 60_000,
+  });
 
   // Where Apple credentials are held. Auto-refresh needs them persisted (keyring),
   // since the unattended agent has no UI to prompt; session-only creds can't.

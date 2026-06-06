@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { GnomeWindow, Sidebar } from "../components/chrome";
 import { Icon, Button, Badge, Card, CardContent, Kbd, Separator, AppTile, StatusDot, cn } from "../components/ui";
 import type { DeviceInfo, InstalledApp, SetupReport } from "../lib/ipc";
@@ -610,8 +610,20 @@ function colorFor(seed: string): SampleApp["color"] {
   return CARD_COLORS[Math.abs(h) % CARD_COLORS.length];
 }
 
-function toSampleApp(a: InstalledApp): SampleApp {
-  const expiresDays = (a.expirationTs * 1000 - Date.now()) / 86_400_000;
+/// A clock that re-renders the caller on an interval, so relative labels like
+/// "Expires in 6.5d" keep ticking down even when the data itself is unchanged.
+/// Without it a left-open window freezes its countdown at mount time.
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+function toSampleApp(a: InstalledApp, now: number): SampleApp {
+  const expiresDays = (a.expirationTs * 1000 - now) / 86_400_000;
   const status: AppStatus =
     a.refreshStatus === "refreshing"
       ? "refreshing"
@@ -637,6 +649,11 @@ function LiveApps({
   apps: InstalledApp[];
   onRefreshApp?: (app: InstalledApp) => void;
 }) {
+  // Re-tick the expiry countdown every minute so a long-open window doesn't
+  // freeze (paired with the query's refetchInterval, which picks up background
+  // refreshes that move expiration_ts).
+  const now = useNow(60_000);
+
   // Group installs by device so each Apollo-on-two-devices reads unambiguously.
   // Groups appear in first-appearance order of the (expiration-sorted) list, so
   // the device with the most urgent app stays near the top. A device's name
@@ -672,7 +689,7 @@ function LiveApps({
             {g.apps.map((a) => (
               <AppCard
                 key={a.installationId}
-                app={toSampleApp(a)}
+                app={toSampleApp(a, now)}
                 live
                 onRefresh={onRefreshApp ? () => onRefreshApp(a) : undefined}
               />
